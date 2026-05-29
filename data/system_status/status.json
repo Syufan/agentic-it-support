@@ -1,0 +1,53 @@
+{
+  "updated_at": "2026-05-29T08:00:00Z",
+  "services": [
+    {
+      "name": "VPN",
+      "status": "operational",
+      "description": "Corporate VPN gateway",
+      "incident": null
+    },
+    {
+      "name": "Okta",
+      "status": "operational",
+      "description": "Identity and SSO provider",
+      "incident": null
+    },
+    {
+      "name": "Salesforce",
+      "status": "degraded",
+      "description": "CRM platform",
+      "incident": "Elevated response times reported since 2026-05-28T14:00:00Z. Engineering investigating."
+    },
+    {
+      "name": "GitHub",
+      "status": "operational",
+      "description": "Source code management",
+      "incident": null
+    },
+    {
+      "name": "Snowflake",
+      "status": "operational",
+      "description": "Cloud data warehouse",
+      "incident": null
+    },
+    {
+      "name": "Grafana",
+      "status": "operational",
+      "description": "Internal dashboards and monitoring",
+      "incident": null
+    },
+    {
+      "name": "Jenkins",
+      "status": "degraded",
+      "description": "CI/CD pipeline",
+      "incident": "Job timeouts observed after maintenance window on 2026-05-23. Root cause under investigation."
+    },
+    {
+      "name": "AWS",
+      "status": "operational",
+      "description": "Cloud infrastructure",
+      "incident": null
+    }
+  ]
+}
