@@ -56,9 +56,10 @@ class CaseState:
     # Resolution control
     resolution_attempts: int = 0
     exception_used: bool = False
-    has_safe_low_risk_guidance: bool = False  # T8 vs T9
-    new_critical_fact_added: bool = False    # T12 vs T13
-    handoff_completed: bool = False          # T14
+    has_safe_low_risk_guidance: bool = False   # T8 vs T9
+    new_critical_fact_added: bool = False      # T12 vs T13
+    handoff_completed: bool = False            # T14
+    user_confirmed_resolution: bool | None = None  # T10 vs T11
 
     # Conversation memory
     conversation: list[dict[str, str]] = field(default_factory=list)
