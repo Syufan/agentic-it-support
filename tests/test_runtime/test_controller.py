@@ -98,7 +98,7 @@ def test_tool_call_then_resolve_in_one_turn():
     ]
     tool = MockTool(ToolResult(success=True, data={"results": []}))
     response = run_turn(case, "VPN keeps disconnecting", MockLLMClient(proposals), {"kb_search": tool})
-    assert response == "Restart VPN client"
+    assert "Restart VPN client" in response
 
 
 def test_tool_trace_recorded():
@@ -272,6 +272,41 @@ def test_escalation_context_includes_resolution_attempts():
     case = CaseState(phase=Phase.INVESTIGATING)
     run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
     assert "resolution_attempts" in case.escalation_context
+
+
+# ── confidence transparency (P1.7) ───────────────────────────────────────────
+
+def test_high_confidence_resolve_has_confident_prefix():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client."),
+    ]), {})
+    assert "likely fix" in response.lower() or "found" in response.lower()
+    assert "Restart VPN client" in response
+
+def test_medium_confidence_resolve_has_hedging_prefix():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try restarting."),
+    ]), {})
+    assert "not fully certain" in response.lower() or "safe" in response.lower()
+    assert "Try restarting" in response
+
+def test_ask_user_message_passes_through_unchanged():
+    case = CaseState()
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ASK_USER, confidence=0.5, message="What OS are you using?"),
+    ]), {})
+    assert response == "What OS are you using?"
+
+def test_escalate_response_is_handoff_message():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="Needs admin", message=None),
+    ]), {})
+    assert "specialist" in response.lower()
+    assert "repeat" in response.lower()
 
 
 # ── state projection ──────────────────────────────────────────────────────────
