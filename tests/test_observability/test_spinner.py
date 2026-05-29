@@ -28,7 +28,7 @@ def test_frame_cycles():
 
 def test_frame_wraps_around():
     line_a = format_waiting_line(0, 0.0, "intake")
-    line_b = format_waiting_line(10, 0.0, "intake")  # 10 % 10 frames = 0
+    line_b = format_waiting_line(2, 0.0, "intake")  # 2 % 2 frames = 0
     assert line_a == line_b
 
 

@@ -2,7 +2,7 @@ import threading
 import time
 from collections.abc import Callable
 
-_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_FRAMES = ("●", " ")
 _CLEAR = "\r" + " " * 70 + "\r"
 
 
