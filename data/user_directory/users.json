@@ -1,0 +1,52 @@
+[
+  {
+    "user_id": "u001",
+    "name": "Alice Johnson",
+    "email": "alice.johnson@company.com",
+    "department": "Engineering",
+    "role": "Software Engineer",
+    "location": "Chicago",
+    "equipment": ["MacBook Pro 14\"", "Dell Monitor 27\""],
+    "permissions": ["GitHub", "AWS", "Jira", "Confluence", "Snowflake"]
+  },
+  {
+    "user_id": "u002",
+    "name": "Bob Chen",
+    "email": "bob.chen@company.com",
+    "department": "Data Engineering",
+    "role": "Data Engineer",
+    "location": "Remote",
+    "equipment": ["MacBook Pro 16\""],
+    "permissions": ["GitHub", "Snowflake", "Grafana", "Airflow", "Jira"]
+  },
+  {
+    "user_id": "u003",
+    "name": "Carol Smith",
+    "email": "carol.smith@company.com",
+    "department": "Sales",
+    "role": "Account Executive",
+    "location": "New York",
+    "equipment": ["MacBook Air 13\"", "iPhone 15"],
+    "permissions": ["Salesforce", "Slack", "Google Workspace", "Zoom"]
+  },
+  {
+    "user_id": "u004",
+    "name": "David Park",
+    "email": "david.park@company.com",
+    "department": "Engineering",
+    "role": "Engineering Manager",
+    "location": "San Francisco",
+    "equipment": ["MacBook Pro 16\"", "iPad Pro"],
+    "permissions": ["GitHub", "AWS", "Jira", "Confluence", "Snowflake", "Grafana", "PagerDuty"]
+  },
+  {
+    "user_id": "u005",
+    "name": "Emma Wilson",
+    "email": "emma.wilson@company.com",
+    "department": "Engineering",
+    "role": "New Employee",
+    "location": "Chicago",
+    "equipment": ["MacBook Pro 14\""],
+    "permissions": ["Slack", "Google Workspace"]
+  }
+]
