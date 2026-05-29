@@ -1,7 +1,7 @@
 [project]
 name = "agentic-it-support"
 version = "0.1.0"
-description = "Add your description here"
+description = "Agentic IT Helpdesk Support Agent"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.3",
@@ -9,3 +9,12 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "uvicorn>=0.48.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
