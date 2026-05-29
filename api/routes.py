@@ -1,6 +1,6 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 
-from agent.llm import BaseLLMClient, RealLLMClient
+from agent.llm import BaseLLMClient, LLMClientError, RealLLMClient
 from api.schemas import ChatRequest, ChatResponse
 from runtime.controller import run_turn
 from state.case_state import Phase
@@ -20,7 +20,10 @@ _default_tools: dict[str, BaseTool] = {
 
 
 def get_llm() -> BaseLLMClient:
-    return RealLLMClient()
+    try:
+        return RealLLMClient()
+    except LLMClientError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def get_tool_registry() -> dict[str, BaseTool]:
@@ -50,7 +53,10 @@ def chat(
     if case is None:
         case = store.create()
 
-    message = run_turn(case, request.message, llm, tools)
+    try:
+        message = run_turn(case, request.message, llm, tools)
+    except LLMClientError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return ChatResponse(
         case_id=case.case_id,
