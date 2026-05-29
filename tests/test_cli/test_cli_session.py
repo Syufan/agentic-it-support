@@ -181,8 +181,25 @@ def test_clear_called_on_each_render():
         reader=_reader,
         writer=lambda _: None,
         clear=lambda: clears.append(1),
+        get_term_height=lambda: 24,
     )
     assert len(clears) >= 2  # initial render + after user message
+
+
+def test_padding_pushes_divider_to_bottom():
+    case = CaseState(phase=Phase.CLOSED)
+    output = []
+
+    run_cli_session(
+        case, MockLLMClient([]), {},
+        reader=lambda _: "",
+        writer=output.append,
+        clear=_no_clear,
+        get_term_height=lambda: 20,
+    )
+    # divider must be one of the last few items written
+    divider_indices = [i for i, o in enumerate(output) if "─" in str(o)]
+    assert divider_indices and divider_indices[-1] >= len(output) - 4
 
 
 # ── typewrite ─────────────────────────────────────────────────────────────────

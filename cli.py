@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import time
 from collections.abc import Callable
@@ -32,11 +33,20 @@ def typewrite(
             time.sleep(delay)
 
 
+def _content_lines(display: list[tuple[str, str]]) -> int:
+    count = 1  # leading blank line
+    for _, msg in display:
+        count += len(msg.splitlines())
+        count += 1  # blank line after each message
+    return count
+
+
 def _render(
     display: list[tuple[str, str]],
     phase: str,
     clear: Callable[[], None],
     writer: Callable[[str], None],
+    term_height: int,
 ) -> None:
     clear()
     writer("")
@@ -45,6 +55,12 @@ def _render(
             writer(f"Agent: {msg}\n")
         else:
             writer(f"> {msg}\n")
+
+    # pad to push divider to bottom (-3: divider + phase line + input prompt)
+    padding = max(0, term_height - _content_lines(display) - 3)
+    for _ in range(padding):
+        writer("")
+
     writer(_DIVIDER)
     writer(f"[{phase}]  Ctrl+C to quit")
 
@@ -56,9 +72,14 @@ def run_cli_session(
     reader: Callable[[str], str] = input,
     writer: Callable[[str], None] = print,
     clear: Callable[[], None] = lambda: os.system("cls" if os.name == "nt" else "clear"),
+    get_term_height: Callable[[], int] = lambda: shutil.get_terminal_size().lines,
 ) -> None:
     display: list[tuple[str, str]] = [("agent", _GREETING)]
-    _render(display, case.phase.value, clear, writer)
+
+    def render() -> None:
+        _render(display, case.phase.value, clear, writer, get_term_height())
+
+    render()
 
     while case.phase != Phase.CLOSED:
         try:
@@ -74,7 +95,7 @@ def run_cli_session(
             continue
 
         display.append(("user", user_input))
-        _render(display, case.phase.value, clear, writer)
+        render()
 
         spinner = Spinner(
             get_phase=lambda: case.phase.value,
