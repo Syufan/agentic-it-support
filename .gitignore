@@ -1,3 +1,15 @@
 .DS_Store
 commit.md
 docs/agentic.html
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# uv
+.python-version
