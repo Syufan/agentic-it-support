@@ -21,27 +21,27 @@ class ValidationResult:
     reason: str | None = None
 
 
-def validate_decision(case: CaseState, decision: AgentProposal) -> ValidationResult:
-    if decision.action not in _ALLOWED_ACTIONS[case.phase]:
-        return ValidationResult(False, f"{decision.action} not allowed in phase {case.phase}")
+def validate_proposal(case: CaseState, proposal: AgentProposal) -> ValidationResult:
+    if proposal.action not in _ALLOWED_ACTIONS[case.phase]:
+        return ValidationResult(False, f"{proposal.action} not allowed in phase {case.phase}")
 
-    match decision.action:
+    match proposal.action:
         case AgentAction.ASK_USER:
-            if not decision.message:
+            if not proposal.message:
                 return ValidationResult(False, "ask_user requires message")
 
         case AgentAction.CALL_TOOL:
-            if not decision.tool_name:
+            if not proposal.tool_name:
                 return ValidationResult(False, "call_tool requires tool_name")
-            if decision.tool_name not in VALID_TOOLS:
-                return ValidationResult(False, f"unknown tool: {decision.tool_name}")
+            if proposal.tool_name not in VALID_TOOLS:
+                return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
 
         case AgentAction.RESOLVE:
-            if not decision.message:
+            if not proposal.message:
                 return ValidationResult(False, "resolve requires message")
 
         case AgentAction.ESCALATE:
-            if not decision.escalation_reason:
+            if not proposal.escalation_reason:
                 return ValidationResult(False, "escalate requires escalation_reason")
 
     return ValidationResult(True)
