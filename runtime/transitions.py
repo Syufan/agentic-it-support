@@ -1,9 +1,23 @@
+from dataclasses import dataclass
+
 from config import CONFIDENCE_HIGH, CONFIDENCE_LOW, MAX_RESOLUTION_ATTEMPTS
 from state import budget as budget_
-from state.case_state import CaseState, MissingInfoSource, Phase
+from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
 
 
-def evaluate_transition(case: CaseState) -> Phase:
+@dataclass
+class TransitionResult:
+    next_phase: Phase
+    budget_mode: BudgetMode | None = None
+    reset_tool_counter: bool = False
+    set_exception_used: bool = False
+
+
+def _result(phase: Phase, **kwargs) -> TransitionResult:
+    return TransitionResult(next_phase=phase, **kwargs)
+
+
+def evaluate_transition(case: CaseState) -> TransitionResult:
     match case.phase:
         case Phase.INTAKE:
             return _from_intake(case)
@@ -16,60 +30,68 @@ def evaluate_transition(case: CaseState) -> Phase:
         case Phase.ESCALATING:
             return _from_escalating(case)
         case Phase.CLOSED:
-            return Phase.CLOSED
+            return _result(Phase.CLOSED)
 
 
-def _from_intake(case: CaseState) -> Phase:
+def _from_intake(case: CaseState) -> TransitionResult:
     if case.missing_info_source == MissingInfoSource.USER and case.missing_info:
-        return Phase.CLARIFYING  # T1
-    return Phase.INVESTIGATING   # T2
+        return _result(Phase.CLARIFYING)   # T1
+    return _result(Phase.INVESTIGATING)    # T2
 
 
-def _from_clarifying(case: CaseState) -> Phase:
+def _from_clarifying(case: CaseState) -> TransitionResult:
     if not case.missing_info:
-        return Phase.INVESTIGATING  # T3
-    return Phase.CLARIFYING
+        return _result(Phase.INVESTIGATING)  # T3
+    return _result(Phase.CLARIFYING)
 
 
-def _from_investigating(case: CaseState) -> Phase:
+def _from_investigating(case: CaseState) -> TransitionResult:
     if case.confidence >= CONFIDENCE_HIGH:
-        return Phase.RESOLVING   # T4
+        return _result(Phase.RESOLVING)    # T4
 
     if case.confidence < CONFIDENCE_LOW:
-        return Phase.ESCALATING  # T5
+        return _result(Phase.ESCALATING)   # T5
 
-    # medium confidence (CONFIDENCE_LOW <= c < CONFIDENCE_HIGH)
     budget_done = budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation)
 
     if budget_done:
         if case.has_safe_low_risk_guidance:
-            return Phase.RESOLVING   # T9
+            return _result(Phase.RESOLVING)                      # T9
         if case.missing_info_source == MissingInfoSource.USER:
-            return Phase.CLARIFYING  # T7 (budget exhausted, ask user)
-        return Phase.ESCALATING      # T8
+            return _result(Phase.CLARIFYING)                     # T7 (budget exhausted)
+        return _result(Phase.ESCALATING)                         # T8
 
     if case.missing_info_source == MissingInfoSource.TOOL:
-        return Phase.INVESTIGATING   # T6
-    return Phase.CLARIFYING          # T7 (non-tool source)
+        return _result(Phase.INVESTIGATING)                      # T6
+    return _result(Phase.CLARIFYING)                             # T7 (non-tool source)
 
 
-def _from_resolving(case: CaseState) -> Phase:
+def _from_resolving(case: CaseState) -> TransitionResult:
     if case.user_confirmed_resolution is True:
-        return Phase.CLOSED          # T10
+        return _result(Phase.CLOSED)                             # T10
 
     if case.user_confirmed_resolution is False:
         if case.resolution_attempts < MAX_RESOLUTION_ATTEMPTS:
-            return Phase.INVESTIGATING  # T11
+            return _result(                                      # T11
+                Phase.INVESTIGATING,
+                budget_mode=BudgetMode.RETRY,
+                reset_tool_counter=True,
+            )
 
         if case.new_critical_fact_added and not case.exception_used:
-            return Phase.CLARIFYING     # T12
+            return _result(                                      # T12
+                Phase.CLARIFYING,
+                budget_mode=BudgetMode.EXCEPTION,
+                reset_tool_counter=True,
+                set_exception_used=True,
+            )
 
-        return Phase.ESCALATING         # T13
+        return _result(Phase.ESCALATING)                         # T13
 
-    return Phase.RESOLVING
+    return _result(Phase.RESOLVING)
 
 
-def _from_escalating(case: CaseState) -> Phase:
+def _from_escalating(case: CaseState) -> TransitionResult:
     if case.handoff_completed:
-        return Phase.CLOSED      # T14
-    return Phase.ESCALATING
+        return _result(Phase.CLOSED)       # T14
+    return _result(Phase.ESCALATING)
