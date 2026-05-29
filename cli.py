@@ -18,8 +18,9 @@ _TOOLS = {
     "user_directory": UserDirectoryTool(),
 }
 
-_DIVIDER = "─" * 52
 _GREETING = "Hi! I'm your IT support assistant. What's your issue?"
+_DIM  = "\033[2m"
+_RESET = "\033[0m"
 
 
 def typewrite(
@@ -36,8 +37,8 @@ def typewrite(
 def _content_lines(display: list[tuple[str, str]]) -> int:
     count = 1  # leading blank line
     for _, msg in display:
-        count += len(msg.splitlines())  # message (may be multi-line)
-        count += 1                      # blank line after
+        count += len(msg.splitlines())
+        count += 1  # blank line after
     return count
 
 
@@ -47,7 +48,9 @@ def _render(
     clear: Callable[[], None],
     writer: Callable[[str], None],
     term_height: int,
+    term_width: int,
 ) -> None:
+    divider = "─" * term_width
     clear()
     writer("")
     for role, msg in display:
@@ -57,13 +60,15 @@ def _render(
             writer(f"> {msg}")
         writer("")
 
-    # pad to push divider to bottom (-3: divider + phase line + input prompt)
-    padding = max(0, term_height - _content_lines(display) - 3)
+    # -5: top_divider + blank(input) + bottom_divider + hint + cursor_on_blank
+    padding = max(0, term_height - _content_lines(display) - 5)
     for _ in range(padding):
         writer("")
 
-    writer(_DIVIDER)
-    writer(f"[{phase}]  Ctrl+C to quit")
+    writer(divider)               # top divider
+    writer("")                    # blank line — ❯ will land here after cursor_up
+    writer(divider)               # bottom divider
+    writer(f"{_DIM}  [{phase}] · Ctrl+C to quit{_RESET}")  # dim hint
 
 
 def run_cli_session(
@@ -73,18 +78,27 @@ def run_cli_session(
     reader: Callable[[str], str] = input,
     writer: Callable[[str], None] = print,
     clear: Callable[[], None] = lambda: os.system("cls" if os.name == "nt" else "clear"),
-    get_term_height: Callable[[], int] = lambda: shutil.get_terminal_size().lines,
+    get_term_size: Callable[[], tuple[int, int]] = lambda: (
+        shutil.get_terminal_size().lines,
+        shutil.get_terminal_size().columns,
+    ),
+    cursor_up: Callable[[int], None] = lambda n: (
+        sys.stdout.write(f"\033[{n}A\r"),
+        sys.stdout.flush(),
+    ),
 ) -> None:
     display: list[tuple[str, str]] = [("agent", _GREETING)]
 
     def render() -> None:
-        _render(display, case.phase.value, clear, writer, get_term_height())
+        h, w = get_term_size()
+        _render(display, case.phase.value, clear, writer, h, w)
 
     render()
 
     while case.phase != Phase.CLOSED:
+        cursor_up(3)  # move from hint line up to blank input line
         try:
-            user_input = reader("> ").strip()
+            user_input = reader("❯ ").strip()
         except (KeyboardInterrupt, EOFError):
             writer("\nGoodbye.")
             break

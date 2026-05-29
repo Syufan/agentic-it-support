@@ -181,7 +181,7 @@ def test_clear_called_on_each_render():
         reader=_reader,
         writer=lambda _: None,
         clear=lambda: clears.append(1),
-        get_term_height=lambda: 24,
+        get_term_size=lambda: (24, 60),
     )
     assert len(clears) >= 2  # initial render + after user message
 
@@ -195,11 +195,58 @@ def test_padding_pushes_divider_to_bottom():
         reader=lambda _: "",
         writer=output.append,
         clear=_no_clear,
-        get_term_height=lambda: 20,
+        get_term_size=lambda: (20, 60),
     )
-    # divider must be one of the last few items written
     divider_indices = [i for i, o in enumerate(output) if "─" in str(o)]
     assert divider_indices and divider_indices[-1] >= len(output) - 4
+
+
+def test_divider_uses_full_terminal_width():
+    case = CaseState(phase=Phase.CLOSED)
+    output = []
+
+    run_cli_session(
+        case, MockLLMClient([]), {},
+        reader=lambda _: "",
+        writer=output.append,
+        clear=_no_clear,
+        get_term_size=lambda: (20, 80),
+        cursor_up=lambda n: None,
+    )
+    dividers = [o for o in output if isinstance(o, str) and set(o.strip()) == {"─"}]
+    assert len(dividers) >= 2 and len(dividers[0]) == 80
+
+
+def test_two_dividers_in_bottom_bar():
+    case = CaseState(phase=Phase.CLOSED)
+    output = []
+
+    run_cli_session(
+        case, MockLLMClient([]), {},
+        reader=lambda _: "",
+        writer=output.append,
+        clear=_no_clear,
+        get_term_size=lambda: (20, 60),
+        cursor_up=lambda n: None,
+    )
+    dividers = [o for o in output if isinstance(o, str) and set(o.strip()) == {"─"}]
+    assert len(dividers) >= 2
+
+
+def test_status_line_shows_phase():
+    case = CaseState(phase=Phase.CLOSED)
+    output = []
+
+    run_cli_session(
+        case, MockLLMClient([]), {},
+        reader=lambda _: "",
+        writer=output.append,
+        clear=_no_clear,
+        get_term_size=lambda: (20, 60),
+        cursor_up=lambda n: None,
+    )
+    joined = " ".join(str(o) for o in output)
+    assert "closed" in joined.lower()
 
 
 # ── typewrite ─────────────────────────────────────────────────────────────────
