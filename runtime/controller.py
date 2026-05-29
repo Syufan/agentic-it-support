@@ -94,6 +94,8 @@ def _execute_tool(
 
     if result.success:
         case.facts[f"{tool_name}_result"] = result.data
+    else:
+        case.facts[f"{tool_name}_error"] = result.error or "unknown error"
 
     case.tool_calls_current_investigation += 1
     case.tool_calls_total += 1
