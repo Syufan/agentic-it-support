@@ -28,7 +28,10 @@ def run_cli_session(
         except (KeyboardInterrupt, EOFError):
             writer("\nGoodbye.")
             break
-        if not user_input:
+        if not user_input or user_input == "\x1b":
+            if user_input == "\x1b":
+                writer("\nGoodbye.")
+                break
             continue
         response = run_turn(case, user_input, llm, tools)
         writer(f"Agent: {response}\n")

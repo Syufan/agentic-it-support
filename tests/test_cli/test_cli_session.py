@@ -120,6 +120,20 @@ def test_agent_response_is_written():
     assert "What OS are you using?" in joined
 
 
+def test_esc_key_exits_gracefully():
+    case = CaseState()
+    output = []
+
+    run_cli_session(
+        case, MockLLMClient([]), {},
+        reader=lambda _: "\x1b",
+        writer=output.append,
+    )
+
+    joined = " ".join(str(o) for o in output).lower()
+    assert "goodbye" in joined or "bye" in joined
+
+
 def test_welcome_message_is_printed():
     case = CaseState(phase=Phase.CLOSED)
     output = []
