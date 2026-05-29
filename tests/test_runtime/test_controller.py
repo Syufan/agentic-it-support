@@ -152,6 +152,50 @@ def test_tool_data_stored_in_facts():
     assert "kb_search_result" in case.facts
 
 
+# ── tool failure handling (P1.5) ─────────────────────────────────────────────
+
+def _failing_proposals() -> list:
+    return [
+        _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
+                  tool_name="kb_search", tool_input={"query": "vpn"},
+                  message=None, missing_info_source=MissingInfoSource.TOOL),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+    ]
+
+def test_failed_tool_trace_has_success_false():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    tool = MockTool(ToolResult(success=False, data={}, error="service unavailable"))
+    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {"kb_search": tool})
+    assert case.tool_traces[0].success is False
+
+def test_failed_tool_error_stored_in_facts():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    tool = MockTool(ToolResult(success=False, data={}, error="service unavailable"))
+    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {"kb_search": tool})
+    assert "kb_search_error" in case.facts
+
+def test_failed_tool_result_not_stored_in_facts():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    tool = MockTool(ToolResult(success=False, data={}, error="service unavailable"))
+    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {"kb_search": tool})
+    assert "kb_search_result" not in case.facts
+
+def test_missing_tool_records_failure_trace():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {})
+    assert case.tool_traces[0].success is False
+
+def test_missing_tool_error_stored_in_facts():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {})
+    assert "kb_search_error" in case.facts
+
+
 # ── resolve ───────────────────────────────────────────────────────────────────
 
 def test_resolve_increments_resolution_attempts():
