@@ -217,14 +217,61 @@ def test_escalate_sets_handoff_completed():
     assert case.handoff_completed is True
 
 
+def _escalate_proposal() -> AgentProposal:
+    return _proposal(
+        action=AgentAction.ESCALATE,
+        confidence=0.3,
+        escalation_reason="Needs admin access",
+        message=None,
+    )
+
 def test_escalate_builds_escalation_context():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Needs admin", message=None),
-    ]), {})
+    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
     assert case.escalation_context != {}
     assert "escalation_reason" in case.escalation_context
+
+def test_escalation_context_includes_confidence():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    assert case.escalation_context["confidence"] == 0.3
+
+def test_escalation_context_includes_issue_description():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN keeps disconnecting every 10 minutes", MockLLMClient([_escalate_proposal()]), {})
+    assert "issue_description" in case.escalation_context
+    assert "VPN keeps disconnecting" in case.escalation_context["issue_description"]
+
+def test_escalation_context_includes_full_conversation():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    assert "conversation" in case.escalation_context
+    assert isinstance(case.escalation_context["conversation"], list)
+
+def test_escalation_context_includes_facts():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.facts = {"os": "macOS"}
+    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    assert case.escalation_context["facts"]["os"] == "macOS"
+
+def test_escalation_context_tool_traces_include_output():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.confidence = 0.6
+    proposals = [
+        _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
+                  tool_name="kb_search", tool_input={"query": "vpn"},
+                  message=None, missing_info_source=MissingInfoSource.TOOL),
+        _escalate_proposal(),
+    ]
+    tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
+    run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
+    trace = case.escalation_context["tool_traces"][0]
+    assert "output" in trace
+
+def test_escalation_context_includes_resolution_attempts():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    assert "resolution_attempts" in case.escalation_context
 
 
 # ── state projection ──────────────────────────────────────────────────────────
