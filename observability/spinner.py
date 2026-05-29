@@ -3,12 +3,12 @@ import time
 from collections.abc import Callable
 
 _FRAMES = ("●", "○")
-_CLEAR = "\r" + " " * 70 + "\r"
+_CLEAR = "\r" + " " * 80 + "\r"
 
 
 def format_waiting_line(frame_idx: int, elapsed: float, phase: str) -> str:
     frame = _FRAMES[frame_idx % len(_FRAMES)]
-    return f"\r{frame} thinking... {elapsed:.1f}s  [phase: {phase}]"
+    return f"\r{frame} thinking... {elapsed:.1f}s  [phase: {phase}]  (ESC to cancel)"
 
 
 class Spinner:

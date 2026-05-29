@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from runtime.controller import run_turn
+from runtime.controller import TurnCancelled, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, MissingInfoSource, Phase
 from tools.base import BaseTool, ToolResult
@@ -361,6 +361,51 @@ def test_llm_error_does_not_raise():
         run_turn(case, "VPN broken", _FailingLLM(), {})
     except Exception as exc:
         pytest.fail(f"run_turn raised unexpectedly: {exc}")
+
+
+# ── turn cancellation (ESC interrupt) ──────────────────────────────────────────
+
+def test_cancel_before_first_iteration_raises_turn_cancelled():
+    case = CaseState()
+    llm = MockLLMClient([_proposal()])
+    with pytest.raises(TurnCancelled):
+        run_turn(case, "VPN broken", llm, {}, should_cancel=lambda: True)
+
+
+def test_cancel_before_first_iteration_does_not_call_llm():
+    case = CaseState()
+    llm = MockLLMClient([_proposal()])
+    with pytest.raises(TurnCancelled):
+        run_turn(case, "VPN broken", llm, {}, should_cancel=lambda: True)
+    # proposal was never consumed
+    assert run_turn(CaseState(), "again", llm, {}) == "What OS?"
+
+
+def test_cancel_before_first_iteration_leaves_phase_unchanged():
+    case = CaseState(phase=Phase.INTAKE)
+    with pytest.raises(TurnCancelled):
+        run_turn(case, "VPN broken", MockLLMClient([_proposal()]), {},
+                 should_cancel=lambda: True)
+    assert case.phase == Phase.INTAKE
+
+
+def test_cancel_after_llm_call_raises_before_mutating_state():
+    # not cancelled at the loop top, cancelled by the time the call returns
+    checks = [False, True]
+    case = CaseState(phase=Phase.INTAKE)
+    llm = MockLLMClient([_proposal()])
+    with pytest.raises(TurnCancelled):
+        run_turn(case, "VPN broken", llm, {}, should_cancel=lambda: checks.pop(0))
+    assert case.phase == Phase.INTAKE
+    # the proposal was consumed but discarded
+    assert case.conversation[-1] == {"role": "user", "content": "VPN broken"}
+
+
+def test_should_cancel_false_completes_normally():
+    case = CaseState()
+    response = run_turn(case, "VPN broken", MockLLMClient([_proposal(message="What OS?")]),
+                        {}, should_cancel=lambda: False)
+    assert response == "What OS?"
 
 
 def test_llm_error_closes_case():
