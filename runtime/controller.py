@@ -3,6 +3,13 @@ from datetime import datetime, timezone
 from agent.llm import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
 from config import CONFIDENCE_HIGH
+from observability.logger import (
+    InMemoryEventLog,
+    record_escalation,
+    record_phase_transition,
+    record_tool_call,
+    record_turn_start,
+)
 from policy import check as policy_check
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
@@ -18,8 +25,12 @@ def run_turn(
     user_message: str,
     llm: BaseLLMClient,
     tool_registry: dict[str, BaseTool],
+    event_log: InMemoryEventLog | None = None,
 ) -> str:
     case.conversation.append({"role": "user", "content": user_message})
+
+    if event_log:
+        record_turn_start(event_log, case)
 
     for _ in range(_MAX_INNER_ITERATIONS):
         llm_input = build_messages(case)
@@ -54,8 +65,20 @@ def run_turn(
         _project_to_state(case, proposal)
 
         if proposal.action == AgentAction.CALL_TOOL:
+            from_phase = case.phase.value
             _execute_tool(case, proposal, tool_registry)
+            if event_log:
+                last_trace = case.tool_traces[-1]
+                record_tool_call(
+                    event_log, case,
+                    tool_name=last_trace.tool_name,
+                    success=last_trace.success,
+                    inputs=last_trace.inputs,
+                )
+            prev_phase = case.phase
             _apply_transition(case, evaluate_transition(case))
+            if event_log and case.phase != prev_phase:
+                record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
             continue
 
         if proposal.action == AgentAction.RESOLVE:
@@ -64,8 +87,13 @@ def run_turn(
         if proposal.action == AgentAction.ESCALATE:
             _build_escalation_context(case, proposal)
             case.handoff_completed = True
+            if event_log:
+                record_escalation(event_log, case, proposal.escalation_reason or "")
 
+        prev_phase = case.phase
         _apply_transition(case, evaluate_transition(case))
+        if event_log and case.phase != prev_phase:
+            record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
         response = _format_response(proposal)
         case.conversation.append({"role": "assistant", "content": response})
