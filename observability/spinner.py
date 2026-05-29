@@ -2,7 +2,7 @@ import threading
 import time
 from collections.abc import Callable
 
-_FRAMES = ("●", " ")
+_FRAMES = ("●", "○")
 _CLEAR = "\r" + " " * 70 + "\r"
 
 
@@ -16,7 +16,7 @@ class Spinner:
         self,
         get_phase: Callable[[], str],
         writer: Callable[[str], None],
-        interval: float = 0.1,
+        interval: float = 0.6,
     ) -> None:
         self._get_phase = get_phase
         self._writer = writer

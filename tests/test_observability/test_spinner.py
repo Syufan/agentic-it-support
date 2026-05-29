@@ -36,7 +36,7 @@ def test_frame_wraps_around():
 
 def test_spinner_writes_at_least_once():
     output = []
-    spinner = Spinner(get_phase=lambda: "investigating", writer=output.append)
+    spinner = Spinner(get_phase=lambda: "investigating", writer=output.append, interval=0.1)
     spinner.start()
     time.sleep(0.25)
     spinner.stop()
@@ -45,9 +45,9 @@ def test_spinner_writes_at_least_once():
 
 def test_spinner_stop_clears_line():
     output = []
-    spinner = Spinner(get_phase=lambda: "investigating", writer=output.append)
+    spinner = Spinner(get_phase=lambda: "investigating", writer=output.append, interval=0.1)
     spinner.start()
-    time.sleep(0.15)
+    time.sleep(0.25)
     spinner.stop()
     last = output[-1]
     assert last.startswith("\r") and last.strip() == ""
@@ -60,8 +60,8 @@ def test_spinner_does_not_raise_on_stop_before_start():
 
 def test_spinner_output_contains_phase():
     output = []
-    spinner = Spinner(get_phase=lambda: "resolving", writer=output.append)
+    spinner = Spinner(get_phase=lambda: "resolving", writer=output.append, interval=0.1)
     spinner.start()
-    time.sleep(0.15)
+    time.sleep(0.25)
     spinner.stop()
     assert any("resolving" in line for line in output)
