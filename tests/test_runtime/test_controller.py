@@ -81,6 +81,7 @@ def test_phase_transitions_to_investigating_when_no_missing_info():
 
 def test_phase_transitions_to_resolving_after_high_confidence_resolve():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -208,6 +209,7 @@ def test_missing_tool_error_stored_in_facts():
 
 def test_resolve_increments_resolution_attempts():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -286,6 +288,7 @@ def test_escalation_context_includes_resolution_attempts():
 
 def test_high_confidence_resolve_has_confident_prefix():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client."),
     ]), {})
@@ -294,6 +297,7 @@ def test_high_confidence_resolve_has_confident_prefix():
 
 def test_medium_confidence_resolve_has_hedging_prefix():
     case = CaseState(phase=Phase.INVESTIGATING)
+    case.tool_calls_total = 1  # investigation already happened
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try restarting."),
     ]), {})
@@ -321,6 +325,7 @@ def test_escalate_response_is_handoff_message():
 
 def test_confidence_updated_from_proposal():
     case = _case_after_clarification()
+    case.tool_calls_total = 2  # investigation already happened
     run_turn(case, "msg", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.95, message="Fix"),
     ]), {})

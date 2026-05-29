@@ -8,6 +8,12 @@ Review the case state (facts, tool results, hypotheses) and choose one action:
 - **escalate**: if confidence < 0.5, or the issue requires admin access / hardware action
 - **ask_user**: if the missing information can only come from the employee, not from tools
 
+## Grounding rule (important)
+Do not answer from memory. You may only `resolve` after grounding your diagnosis in at
+least one tool lookup for THIS case — search the knowledge base, check service status, or
+look up the user. If no tool has been called yet, your next action must be `call_tool`.
+Never fabricate steps or article contents; base your fix on what the tools returned.
+
 ## Confidence thresholds
 - >= 0.8 → resolve
 - 0.5–0.8 → investigate further or ask user

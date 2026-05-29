@@ -22,10 +22,13 @@ def check(case: CaseState, proposal: AgentProposal) -> PolicyDecision:
             )
 
     if proposal.action == AgentAction.RESOLVE:
-        if case.tool_calls_total == 0 and proposal.confidence < CONFIDENCE_LOW:
+        # The grounding gate applies when the agent first proposes a fix
+        # (INVESTIGATING). In RESOLVING the action only records the employee's
+        # confirmation, so it must not be gated on tool use.
+        if case.phase != Phase.RESOLVING and case.tool_calls_total == 0:
             return PolicyDecision(
                 False,
-                "resolve blocked: no investigation performed and confidence below minimum threshold",
+                "resolve blocked: ground the diagnosis in at least one tool lookup before resolving",
             )
         if proposal.confidence >= CONFIDENCE_HIGH:
             user_turns = sum(1 for m in case.conversation if m["role"] == "user")

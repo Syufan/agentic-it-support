@@ -69,16 +69,25 @@ def test_resolve_blocked_when_no_tools_called_and_confidence_below_low():
     assert "resolve blocked" in decision.reason
 
 
+def test_resolve_blocked_when_no_tools_called_even_with_medium_confidence():
+    case = _case(tool_calls_total=0)
+    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Try this")
+    decision = check(case, proposal)
+    assert not decision.allowed
+    assert "resolve blocked" in decision.reason
+
+
+def test_resolve_blocked_when_no_tools_called_even_with_high_confidence():
+    case = _case(tool_calls_total=0)
+    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.95, message="Try this")
+    decision = check(case, proposal)
+    assert not decision.allowed
+    assert "resolve blocked" in decision.reason
+
+
 def test_resolve_allowed_when_tools_called_even_with_low_confidence():
     case = _case(tool_calls_total=2)
     proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.3, message="Try this")
-    decision = check(case, proposal)
-    assert decision.allowed
-
-
-def test_resolve_allowed_when_no_tools_but_high_confidence():
-    case = _case(tool_calls_total=0)
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Try this")
     decision = check(case, proposal)
     assert decision.allowed
 
