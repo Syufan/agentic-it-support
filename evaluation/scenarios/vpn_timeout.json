@@ -1,0 +1,12 @@
+{
+  "name": "VPN timeout resolution",
+  "description": "Employee cannot connect to VPN — times out on macOS with Cisco AnyConnect",
+  "messages": [
+    "I cannot connect to the VPN, it keeps timing out",
+    "Cisco AnyConnect on macOS, home WiFi, error says connection timed out, already restarted"
+  ],
+  "expect": {
+    "escalated": false,
+    "min_tool_calls": 1
+  }
+}
