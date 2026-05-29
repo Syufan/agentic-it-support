@@ -1,6 +1,8 @@
+import sys
 from collections.abc import Callable
 
 from agent.llm import BaseLLMClient, RealLLMClient
+from observability.spinner import Spinner
 from runtime.controller import run_turn
 from state.case_state import CaseState, Phase
 from tools.kb_search import KBSearchTool
@@ -33,7 +35,13 @@ def run_cli_session(
                 writer("\nGoodbye.")
                 break
             continue
+        spinner = Spinner(
+            get_phase=lambda: case.phase.value,
+            writer=lambda s: (sys.stdout.write(s), sys.stdout.flush()),
+        )
+        spinner.start()
         response = run_turn(case, user_input, llm, tools)
+        spinner.stop()
         writer(f"Agent: {response}\n")
         writer(f"[phase: {case.phase.value}]")
 
