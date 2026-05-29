@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from agent.llm import BaseLLMClient
 from agent.proposals import AgentAction, AgentProposal
+from config import CONFIDENCE_HIGH
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
@@ -143,4 +144,11 @@ def _format_response(proposal: AgentProposal) -> str:
             "I'm connecting you with an IT specialist who will have all the context — "
             "you won't need to repeat yourself."
         )
+
+    if proposal.action == AgentAction.RESOLVE:
+        message = proposal.message or ""
+        if proposal.confidence >= CONFIDENCE_HIGH:
+            return f"I found a likely fix for your issue: {message}"
+        return f"I'm not fully certain, but this is a safe first step to try: {message}"
+
     return proposal.message or ""
