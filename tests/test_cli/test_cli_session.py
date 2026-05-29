@@ -134,6 +134,31 @@ def test_esc_key_exits_gracefully():
     assert "goodbye" in joined or "bye" in joined
 
 
+def test_phase_displayed_after_response():
+    case = CaseState()
+    output = []
+    messages = ["VPN broken"]
+    idx = [0]
+
+    def _reader(_):
+        if idx[0] < len(messages):
+            msg = messages[idx[0]]
+            idx[0] += 1
+            return msg
+        raise EOFError
+
+    run_cli_session(
+        case,
+        MockLLMClient([_proposal(message="What OS?")]),
+        {},
+        reader=_reader,
+        writer=output.append,
+    )
+
+    joined = " ".join(str(o) for o in output)
+    assert "[" in joined and "phase" in joined.lower()
+
+
 def test_welcome_message_is_printed():
     case = CaseState(phase=Phase.CLOSED)
     output = []

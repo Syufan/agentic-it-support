@@ -35,6 +35,7 @@ def run_cli_session(
             continue
         response = run_turn(case, user_input, llm, tools)
         writer(f"Agent: {response}\n")
+        writer(f"[phase: {case.phase.value}]")
 
 
 if __name__ == "__main__":
