@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+
+
+class Phase(str, Enum):
+    INTAKE = "intake"
+    CLARIFYING = "clarifying"
+    INVESTIGATING = "investigating"
+    RESOLVING = "resolving"
+    ESCALATING = "escalating"
+    CLOSED = "closed"
+
+
+class BudgetMode(str, Enum):
+    MAIN = "main"
+    RETRY = "retry"
+    EXCEPTION = "exception"
+
+
+class MissingInfoSource(str, Enum):
+    USER = "user"
+    TOOL = "tool"
+    NONE = "none"
+
+
+@dataclass
+class ToolTrace:
+    tool_name: str
+    inputs: dict[str, Any]
+    output: Any
+    success: bool
+    budget_mode: BudgetMode
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class CaseState:
+    case_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # Phase & budget
+    phase: Phase = Phase.INTAKE
+    budget_mode: BudgetMode = BudgetMode.MAIN
+    tool_calls_current_investigation: int = 0
+    tool_calls_total: int = 0
+
+    # Confidence & missing info
+    confidence: float = 0.0
+    missing_info_source: MissingInfoSource = MissingInfoSource.NONE
+    missing_info: list[str] = field(default_factory=list)
+
+    # Resolution control
+    resolution_attempts: int = 0
+    exception_used: bool = False
+
+    # Conversation memory
+    conversation: list[dict[str, str]] = field(default_factory=list)
+
+    # Investigation state
+    facts: dict[str, Any] = field(default_factory=dict)
+    hypotheses: list[str] = field(default_factory=list)
+    checked_sources: list[str] = field(default_factory=list)
+
+    # Tool history
+    tool_traces: list[ToolTrace] = field(default_factory=list)
+
+    # Resolution tracking
+    failed_resolutions: list[str] = field(default_factory=list)
+
+    # Escalation
+    escalation_context: dict[str, Any] = field(default_factory=dict)
