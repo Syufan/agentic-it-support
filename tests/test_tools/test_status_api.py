@@ -1,3 +1,4 @@
+import tools.status_api as _status_mod
 from tools.status_api import StatusAPITool
 
 tool = StatusAPITool()
@@ -41,5 +42,21 @@ def test_degraded_service_has_incident():
 
 def test_unknown_service_returns_error():
     result = tool.run({"service": "NonExistentService"})
+    assert result.success is False
+    assert result.error is not None
+
+
+def test_missing_status_file_returns_error_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(_status_mod, "_STATUS_FILE", tmp_path / "nonexistent.json")
+    result = StatusAPITool().run({})
+    assert result.success is False
+    assert result.error is not None
+
+
+def test_malformed_status_file_returns_error_result(tmp_path, monkeypatch):
+    bad = tmp_path / "status.json"
+    bad.write_text("not valid json")
+    monkeypatch.setattr(_status_mod, "_STATUS_FILE", bad)
+    result = StatusAPITool().run({})
     assert result.success is False
     assert result.error is not None

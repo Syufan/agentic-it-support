@@ -12,7 +12,10 @@ class StatusAPITool(BaseTool):
     description = "Check current status of internal services and known incidents"
 
     def run(self, inputs: dict[str, Any]) -> ToolResult:
-        data = json.loads(_STATUS_FILE.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(_STATUS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return ToolResult(success=False, data={}, error=f"status data unavailable: {exc}")
         services = data["services"]
 
         service_filter = str(inputs.get("service", "")).strip()

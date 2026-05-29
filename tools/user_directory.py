@@ -18,7 +18,10 @@ class UserDirectoryTool(BaseTool):
         if not user_id and not email:
             return ToolResult(success=False, data={}, error="user_id or email is required")
 
-        users = json.loads(_USERS_FILE.read_text(encoding="utf-8"))
+        try:
+            users = json.loads(_USERS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return ToolResult(success=False, data={}, error=f"user directory unavailable: {exc}")
 
         if user_id:
             match = next((u for u in users if u["user_id"] == user_id), None)

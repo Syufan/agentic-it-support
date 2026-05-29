@@ -101,7 +101,7 @@ def test_chat_continues_existing_case(persistent_store):
     app.dependency_overrides.clear()
 
 
-def test_chat_unknown_case_id_creates_new_case(persistent_store):
+def test_chat_unknown_case_id_returns_404(persistent_store):
     llm = MockLLMClient([_proposal()])
     app.dependency_overrides[get_store] = lambda: persistent_store
     app.dependency_overrides[get_llm] = lambda: llm
@@ -109,8 +109,7 @@ def test_chat_unknown_case_id_creates_new_case(persistent_store):
 
     c = TestClient(app)
     response = c.post("/chat", json={"message": "VPN broken", "case_id": "nonexistent-id"})
-    assert response.status_code == 200
-    assert response.json()["case_id"] != "nonexistent-id"
+    assert response.status_code == 404
 
     app.dependency_overrides.clear()
 
