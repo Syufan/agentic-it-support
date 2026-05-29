@@ -1,9 +1,10 @@
 from typing import Any
 
 import pytest
-from agent.llm import MockLLMClient
+from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from runtime.controller import run_turn
+from runtime.message_builder import LLMInput
 from state.case_state import CaseState, MissingInfoSource, Phase
 from tools.base import BaseTool, ToolResult
 
@@ -326,3 +327,30 @@ def test_missing_info_projected_from_proposal():
         missing_info=["OS", "VPN version"],
     )]), {})
     assert case.missing_info == ["OS", "VPN version"]
+
+
+# ── LLMClientError handling ───────────────────────────────────────────────────
+
+class _FailingLLM(BaseLLMClient):
+    def call(self, llm_input: LLMInput) -> AgentProposal:
+        raise LLMProviderError("provider down")
+
+
+def test_llm_error_returns_graceful_message():
+    case = CaseState()
+    response = run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert "technical issue" in response.lower() or "specialist" in response.lower()
+
+
+def test_llm_error_appends_to_conversation():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.conversation[-1]["role"] == "assistant"
+
+
+def test_llm_error_does_not_raise():
+    case = CaseState()
+    try:
+        run_turn(case, "VPN broken", _FailingLLM(), {})
+    except Exception as exc:
+        pytest.fail(f"run_turn raised unexpectedly: {exc}")

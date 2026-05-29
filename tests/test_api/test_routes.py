@@ -115,7 +115,7 @@ def test_chat_unknown_case_id_creates_new_case(persistent_store):
     app.dependency_overrides.clear()
 
 
-def test_chat_returns_503_when_llm_fails(persistent_store):
+def test_chat_returns_graceful_message_when_llm_fails_mid_turn(persistent_store):
     class FailingLLM(BaseLLMClient):
         def call(self, llm_input):
             raise LLMProviderError("LLM model unavailable")
@@ -127,7 +127,8 @@ def test_chat_returns_503_when_llm_fails(persistent_store):
     c = TestClient(app)
     response = c.post("/chat", json={"message": "VPN broken"})
 
-    assert response.status_code == 503
-    assert response.json()["detail"] == "LLM model unavailable"
+    assert response.status_code == 200
+    body = response.json()
+    assert "specialist" in body["message"].lower() or "technical issue" in body["message"].lower()
 
     app.dependency_overrides.clear()
