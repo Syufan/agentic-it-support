@@ -1,3 +1,4 @@
+import tools.user_directory as _dir_mod
 from tools.user_directory import UserDirectoryTool
 
 tool = UserDirectoryTool()
@@ -43,3 +44,19 @@ def test_no_input_returns_error():
 def test_permissions_is_list():
     result = tool.run({"user_id": "u001"})
     assert isinstance(result.data["user"]["permissions"], list)
+
+
+def test_missing_users_file_returns_error_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(_dir_mod, "_USERS_FILE", tmp_path / "nonexistent.json")
+    result = UserDirectoryTool().run({"user_id": "u001"})
+    assert result.success is False
+    assert result.error is not None
+
+
+def test_malformed_users_file_returns_error_result(tmp_path, monkeypatch):
+    bad = tmp_path / "users.json"
+    bad.write_text("not valid json")
+    monkeypatch.setattr(_dir_mod, "_USERS_FILE", bad)
+    result = UserDirectoryTool().run({"user_id": "u001"})
+    assert result.success is False
+    assert result.error is not None

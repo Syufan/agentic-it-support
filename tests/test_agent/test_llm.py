@@ -116,3 +116,22 @@ def test_real_llm_raises_for_invalid_proposal_json():
 
     with pytest.raises(LLMResponseError, match="AgentProposal"):
         client.call(_llm_input())
+
+
+class _FakeCompletionsNoChoices:
+    def create(self, **kwargs):
+        class _Empty:
+            choices = []
+        return _Empty()
+
+
+class _FakeOpenAIClientNoChoices:
+    class _Chat:
+        completions = _FakeCompletionsNoChoices()
+    chat = _Chat()
+
+
+def test_real_llm_raises_for_empty_choices():
+    client = RealLLMClient(api_key="", client=_FakeOpenAIClientNoChoices())
+    with pytest.raises(LLMResponseError, match="no choices"):
+        client.call(_llm_input())

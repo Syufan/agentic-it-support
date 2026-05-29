@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException
+from functools import lru_cache
 
 from agent.llm import BaseLLMClient, LLMClientError, RealLLMClient
 from api.schemas import ChatRequest, ChatResponse
@@ -6,28 +7,25 @@ from runtime.controller import run_turn
 from state.case_state import Phase
 from state.session import SessionStore, store as _default_store
 from tools.base import BaseTool
-from tools.kb_search import KBSearchTool
-from tools.status_api import StatusAPITool
-from tools.user_directory import UserDirectoryTool
+from tools import DEFAULT_TOOLS
 
 app = FastAPI(title="IT Helpdesk Agent")
 
-_default_tools: dict[str, BaseTool] = {
-    "kb_search": KBSearchTool(),
-    "status_api": StatusAPITool(),
-    "user_directory": UserDirectoryTool(),
-}
+
+@lru_cache(maxsize=1)
+def _llm_singleton() -> BaseLLMClient:
+    return RealLLMClient()
 
 
 def get_llm() -> BaseLLMClient:
     try:
-        return RealLLMClient()
+        return _llm_singleton()
     except LLMClientError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def get_tool_registry() -> dict[str, BaseTool]:
-    return _default_tools
+    return DEFAULT_TOOLS
 
 
 def get_store() -> SessionStore:
@@ -49,6 +47,8 @@ def chat(
     case = None
     if request.case_id:
         case = store.get(request.case_id)
+        if case is None:
+            raise HTTPException(status_code=404, detail="case not found")
 
     if case is None:
         case = store.create()

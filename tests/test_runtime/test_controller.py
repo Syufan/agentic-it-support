@@ -32,6 +32,13 @@ def _proposal(**kwargs) -> AgentProposal:
     return AgentProposal(**(defaults | kwargs))
 
 
+def _case_after_clarification(phase: Phase = Phase.INVESTIGATING) -> CaseState:
+    """Case that already has one prior user turn, satisfying the high-confidence resolve policy."""
+    case = CaseState(phase=phase)
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    return case
+
+
 # ── conversation management ───────────────────────────────────────────────────
 
 def test_user_message_appended_to_conversation():
@@ -73,7 +80,7 @@ def test_phase_transitions_to_investigating_when_no_missing_info():
 
 
 def test_phase_transitions_to_resolving_after_high_confidence_resolve():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -83,7 +90,7 @@ def test_phase_transitions_to_resolving_after_high_confidence_resolve():
 # ── tool call flow ────────────────────────────────────────────────────────────
 
 def test_tool_call_then_resolve_in_one_turn():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     case.confidence = 0.6
 
     proposals = [
@@ -200,7 +207,7 @@ def test_missing_tool_error_stored_in_facts():
 # ── resolve ───────────────────────────────────────────────────────────────────
 
 def test_resolve_increments_resolution_attempts():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -278,7 +285,7 @@ def test_escalation_context_includes_resolution_attempts():
 # ── confidence transparency (P1.7) ───────────────────────────────────────────
 
 def test_high_confidence_resolve_has_confident_prefix():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client."),
     ]), {})
@@ -313,7 +320,7 @@ def test_escalate_response_is_handoff_message():
 # ── state projection ──────────────────────────────────────────────────────────
 
 def test_confidence_updated_from_proposal():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "msg", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.95, message="Fix"),
     ]), {})
@@ -354,3 +361,87 @@ def test_llm_error_does_not_raise():
         run_turn(case, "VPN broken", _FailingLLM(), {})
     except Exception as exc:
         pytest.fail(f"run_turn raised unexpectedly: {exc}")
+
+
+def test_llm_error_closes_case():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_llm_error_sets_handoff_completed():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.handoff_completed is True
+
+
+def test_llm_error_builds_escalation_context():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context
+
+
+# ── policy block ──────────────────────────────────────────────────────────────
+
+def test_policy_block_closes_case():
+    # INVESTIGATING, confidence=0.6 >= CONFIDENCE_LOW, budget=0 → premature escalation blocked
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_policy_block_sets_handoff_completed():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.handoff_completed is True
+
+
+def test_policy_block_builds_escalation_context():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context
+
+
+def test_policy_block_returns_specialist_message():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert "specialist" in response.lower()
+
+
+# ── validate_proposal failure ─────────────────────────────────────────────────
+
+def test_validate_failure_closes_case():
+    # INTAKE phase: RESOLVE is not an allowed action → validator rejects
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_validate_failure_sets_handoff_completed():
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.handoff_completed is True
+
+
+def test_validate_failure_builds_escalation_context():
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context
