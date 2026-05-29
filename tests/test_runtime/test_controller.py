@@ -32,6 +32,13 @@ def _proposal(**kwargs) -> AgentProposal:
     return AgentProposal(**(defaults | kwargs))
 
 
+def _case_after_clarification(phase: Phase = Phase.INVESTIGATING) -> CaseState:
+    """Case that already has one prior user turn, satisfying the high-confidence resolve policy."""
+    case = CaseState(phase=phase)
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    return case
+
+
 # ── conversation management ───────────────────────────────────────────────────
 
 def test_user_message_appended_to_conversation():
@@ -73,7 +80,7 @@ def test_phase_transitions_to_investigating_when_no_missing_info():
 
 
 def test_phase_transitions_to_resolving_after_high_confidence_resolve():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -83,7 +90,7 @@ def test_phase_transitions_to_resolving_after_high_confidence_resolve():
 # ── tool call flow ────────────────────────────────────────────────────────────
 
 def test_tool_call_then_resolve_in_one_turn():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     case.confidence = 0.6
 
     proposals = [
@@ -200,7 +207,7 @@ def test_missing_tool_error_stored_in_facts():
 # ── resolve ───────────────────────────────────────────────────────────────────
 
 def test_resolve_increments_resolution_attempts():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -278,7 +285,7 @@ def test_escalation_context_includes_resolution_attempts():
 # ── confidence transparency (P1.7) ───────────────────────────────────────────
 
 def test_high_confidence_resolve_has_confident_prefix():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client."),
     ]), {})
@@ -313,7 +320,7 @@ def test_escalate_response_is_handoff_message():
 # ── state projection ──────────────────────────────────────────────────────────
 
 def test_confidence_updated_from_proposal():
-    case = CaseState(phase=Phase.INVESTIGATING)
+    case = _case_after_clarification()
     run_turn(case, "msg", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.95, message="Fix"),
     ]), {})

@@ -27,6 +27,7 @@ def _closing_proposal() -> AgentProposal:
 def test_session_exits_when_case_is_closed():
     case = CaseState(phase=Phase.RESOLVING)
     case.user_confirmed_resolution = True
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
 
     messages = iter(["it worked"])
     output = []
