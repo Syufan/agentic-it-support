@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
-from agent.llm import BaseLLMClient
+from agent.llm import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
+from config import CONFIDENCE_HIGH
+from policy import check as policy_check
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
@@ -21,12 +23,29 @@ def run_turn(
 
     for _ in range(_MAX_INNER_ITERATIONS):
         llm_input = build_messages(case)
-        proposal = llm.call(llm_input)
+        try:
+            proposal = llm.call(llm_input)
+        except LLMClientError:
+            response = (
+                "I encountered a technical issue. "
+                "Transferring you to a specialist."
+            )
+            case.conversation.append({"role": "assistant", "content": response})
+            return response
 
         validation = validate_proposal(case, proposal)
         if not validation.valid:
             response = (
                 "I ran into an issue processing your request. "
+                "Transferring you to a specialist."
+            )
+            case.conversation.append({"role": "assistant", "content": response})
+            return response
+
+        policy = policy_check(case, proposal)
+        if not policy.allowed:
+            response = (
+                "I wasn't able to complete that action due to a policy constraint. "
                 "Transferring you to a specialist."
             )
             case.conversation.append({"role": "assistant", "content": response})
@@ -94,6 +113,8 @@ def _execute_tool(
 
     if result.success:
         case.facts[f"{tool_name}_result"] = result.data
+    else:
+        case.facts[f"{tool_name}_error"] = result.error or "unknown error"
 
     case.tool_calls_current_investigation += 1
     case.tool_calls_total += 1
@@ -110,17 +131,27 @@ def _apply_transition(case: CaseState, result: TransitionResult) -> None:
 
 
 def _build_escalation_context(case: CaseState, proposal: AgentProposal) -> None:
+    issue_description = next(
+        (m["content"] for m in case.conversation if m["role"] == "user"), ""
+    )
     case.escalation_context = {
         "escalation_reason": proposal.escalation_reason,
         "confidence": proposal.confidence,
+        "issue_description": issue_description,
+        "conversation": list(case.conversation),
         "facts": dict(case.facts),
         "hypotheses": list(case.hypotheses),
         "tool_traces": [
-            {"tool": t.tool_name, "success": t.success, "inputs": t.inputs}
+            {
+                "tool": t.tool_name,
+                "success": t.success,
+                "inputs": t.inputs,
+                "output": t.output,
+            }
             for t in case.tool_traces
         ],
         "failed_resolutions": list(case.failed_resolutions),
-        "conversation_turns": len(case.conversation),
+        "resolution_attempts": case.resolution_attempts,
     }
 
 
@@ -131,4 +162,11 @@ def _format_response(proposal: AgentProposal) -> str:
             "I'm connecting you with an IT specialist who will have all the context — "
             "you won't need to repeat yourself."
         )
+
+    if proposal.action == AgentAction.RESOLVE:
+        message = proposal.message or ""
+        if proposal.confidence >= CONFIDENCE_HIGH:
+            return f"I found a likely fix for your issue: {message}"
+        return f"I'm not fully certain, but this is a safe first step to try: {message}"
+
     return proposal.message or ""
