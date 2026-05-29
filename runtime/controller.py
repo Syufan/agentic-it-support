@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 
-from agent.llm import BaseLLMClient
+from agent.llm import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
 from config import CONFIDENCE_HIGH
+from policy import check as policy_check
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
@@ -22,12 +23,29 @@ def run_turn(
 
     for _ in range(_MAX_INNER_ITERATIONS):
         llm_input = build_messages(case)
-        proposal = llm.call(llm_input)
+        try:
+            proposal = llm.call(llm_input)
+        except LLMClientError:
+            response = (
+                "I encountered a technical issue. "
+                "Transferring you to a specialist."
+            )
+            case.conversation.append({"role": "assistant", "content": response})
+            return response
 
         validation = validate_proposal(case, proposal)
         if not validation.valid:
             response = (
                 "I ran into an issue processing your request. "
+                "Transferring you to a specialist."
+            )
+            case.conversation.append({"role": "assistant", "content": response})
+            return response
+
+        policy = policy_check(case, proposal)
+        if not policy.allowed:
+            response = (
+                "I wasn't able to complete that action due to a policy constraint. "
                 "Transferring you to a specialist."
             )
             case.conversation.append({"role": "assistant", "content": response})
