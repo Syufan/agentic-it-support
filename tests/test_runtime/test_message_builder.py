@@ -101,6 +101,45 @@ def test_observation_includes_tool_traces():
     assert "kb_search" in full_text
 
 
+# ── no consecutive same-role messages (P0.4) ─────────────────────────────────
+
+def test_observation_merged_when_conv_ends_with_user():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [{"role": "user", "content": "VPN is broken"}]
+    result = build_messages(case)
+    assert len(result.messages) == 1
+    assert "VPN is broken" in result.messages[0]["content"]
+    assert "investigating" in result.messages[0]["content"].lower()
+
+def test_no_consecutive_user_messages_when_conv_ends_with_user():
+    case = CaseState()
+    case.conversation = [{"role": "user", "content": "VPN is broken"}]
+    result = build_messages(case)
+    for i in range(len(result.messages) - 1):
+        assert not (result.messages[i]["role"] == "user" and result.messages[i + 1]["role"] == "user")
+
+def test_observation_appended_when_conv_ends_with_assistant():
+    case = CaseState()
+    case.conversation = [
+        {"role": "user", "content": "VPN is broken"},
+        {"role": "assistant", "content": "What OS?"},
+    ]
+    result = build_messages(case)
+    assert len(result.messages) == 3
+    assert result.messages[-1]["role"] == "user"
+
+def test_no_consecutive_user_with_mixed_conversation():
+    case = CaseState()
+    case.conversation = [
+        {"role": "user", "content": "VPN is broken"},
+        {"role": "assistant", "content": "What OS?"},
+        {"role": "user", "content": "macOS"},
+    ]
+    result = build_messages(case)
+    for i in range(len(result.messages) - 1):
+        assert result.messages[i]["role"] != result.messages[i + 1]["role"]
+
+
 # ── message format ────────────────────────────────────────────────────────────
 
 def test_each_message_has_role_and_content():
