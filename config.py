@@ -17,6 +17,9 @@ MAX_RESOLUTION_ATTEMPTS = 2
 CONFIDENCE_HIGH = 0.8
 CONFIDENCE_LOW = 0.5
 
+# Confidence calibration (tunable from evaluation data without code changes)
+CONFIDENCE_RETRY_PENALTY = float(os.getenv("CONFIDENCE_RETRY_PENALTY", "0.15"))
+
 # Cost estimation (USD per 1K tokens; defaults track gpt-4o-mini list pricing)
 LLM_PROMPT_COST_PER_1K = float(os.getenv("LLM_PROMPT_COST_PER_1K", "0.00015"))
 LLM_COMPLETION_COST_PER_1K = float(os.getenv("LLM_COMPLETION_COST_PER_1K", "0.0006"))

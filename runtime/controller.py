@@ -13,6 +13,7 @@ from observability.logger import (
     record_turn_start,
 )
 from policy import check as policy_check
+from runtime.calibration import calibrate
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
@@ -118,7 +119,7 @@ def run_turn(
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
-        response = _format_response(proposal)
+        response = _format_response(proposal, case.confidence)
         case.conversation.append({"role": "assistant", "content": response})
         return response
 
@@ -161,7 +162,7 @@ def _record_llm_stats(
 
 
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
-    case.confidence = proposal.confidence
+    case.confidence = calibrate(proposal.confidence, case)
     case.missing_info_source = proposal.missing_info_source
     case.missing_info = list(proposal.missing_info)
     case.has_safe_low_risk_guidance = proposal.has_safe_low_risk_guidance
@@ -240,7 +241,7 @@ def _build_escalation_context(
     }
 
 
-def _format_response(proposal: AgentProposal) -> str:
+def _format_response(proposal: AgentProposal, confidence: float) -> str:
     if proposal.action == AgentAction.ESCALATE:
         return (
             "I wasn't able to fully resolve this issue. "
@@ -250,7 +251,9 @@ def _format_response(proposal: AgentProposal) -> str:
 
     if proposal.action == AgentAction.RESOLVE:
         message = proposal.message or ""
-        if proposal.confidence >= CONFIDENCE_HIGH:
+        # use the runtime's calibrated confidence so the wording the employee
+        # sees matches the confidence the runtime actually acted on
+        if confidence >= CONFIDENCE_HIGH:
             return f"I found a likely fix for your issue: {message}"
         return f"I'm not fully certain, but this is a safe first step to try: {message}"
 

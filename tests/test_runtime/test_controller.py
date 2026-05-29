@@ -304,6 +304,19 @@ def test_medium_confidence_resolve_has_hedging_prefix():
     assert "not fully certain" in response.lower() or "safe" in response.lower()
     assert "Try restarting" in response
 
+def test_resolve_prefix_reflects_calibrated_not_raw_confidence():
+    # raw confidence is high (0.9) but a prior failed attempt calibrates it down,
+    # so the employee sees the hedged wording; confidence shown matches the
+    # confidence the runtime actually acted on.
+    case = _case_after_clarification()
+    case.tool_calls_total = 2
+    case.resolution_attempts = 1  # one prior fix did not stick -> -0.15
+    response = run_turn(case, "still broken", MockLLMClient([
+        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Reinstall the client."),
+    ]), {})
+    assert "not fully certain" in response.lower() or "safe" in response.lower()
+
+
 def test_ask_user_message_passes_through_unchanged():
     case = CaseState()
     response = run_turn(case, "VPN broken", MockLLMClient([
