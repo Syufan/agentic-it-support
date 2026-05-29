@@ -7,6 +7,7 @@ from config import CONFIDENCE_HIGH
 from observability.logger import (
     InMemoryEventLog,
     record_escalation,
+    record_llm_call,
     record_phase_transition,
     record_tool_call,
     record_turn_start,
@@ -51,6 +52,8 @@ def run_turn(
             proposal = llm.call(llm_input)
         except LLMClientError:
             return _force_escalate(case, "LLM provider error during investigation")
+
+        _record_llm_stats(case, llm, event_log)
 
         # The provider call is the blocking wait, so re-check here: this is what
         # lets ESC interrupt the common single-call turn before we mutate state.
@@ -134,6 +137,27 @@ def _force_escalate(case: CaseState, reason: str) -> str:
     )
     case.conversation.append({"role": "assistant", "content": msg})
     return msg
+
+
+def _record_llm_stats(
+    case: CaseState,
+    llm: BaseLLMClient,
+    event_log: InMemoryEventLog | None,
+) -> None:
+    stats = getattr(llm, "last_stats", None)
+    if stats is None:
+        return
+    case.llm_calls += 1
+    case.prompt_tokens += stats.prompt_tokens
+    case.completion_tokens += stats.completion_tokens
+    case.llm_latency_ms += stats.latency_ms
+    if event_log:
+        record_llm_call(
+            event_log, case,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            latency_ms=stats.latency_ms,
+        )
 
 
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:

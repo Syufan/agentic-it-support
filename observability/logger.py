@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from config import estimate_cost_usd
 from state.case_state import CaseState
 
 logger = logging.getLogger("agentic_it_support")
@@ -60,6 +61,26 @@ def record_tool_call(
     ))
 
 
+def record_llm_call(
+    log: InMemoryEventLog,
+    case: CaseState,
+    prompt_tokens: int,
+    completion_tokens: int,
+    latency_ms: float,
+) -> None:
+    log.record(Event(
+        type="llm_call",
+        case_id=case.case_id,
+        phase=case.phase.value,
+        confidence=case.confidence,
+        details={
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "latency_ms": latency_ms,
+        },
+    ))
+
+
 def record_phase_transition(
     log: InMemoryEventLog,
     case: CaseState,
@@ -113,6 +134,11 @@ def log_case_closed(case: CaseState) -> None:
         "tool_calls_total": case.tool_calls_total,
         "resolution_attempts": case.resolution_attempts,
         "final_confidence": case.confidence,
+        "llm_calls": case.llm_calls,
+        "prompt_tokens": case.prompt_tokens,
+        "completion_tokens": case.completion_tokens,
+        "llm_latency_ms": round(case.llm_latency_ms, 2),
+        "estimated_cost_usd": estimate_cost_usd(case.prompt_tokens, case.completion_tokens),
         "facts": case.facts,
         "escalation_context": case.escalation_context,
     }))

@@ -341,6 +341,35 @@ def test_missing_info_projected_from_proposal():
     assert case.missing_info == ["OS", "VPN version"]
 
 
+# ── cost / latency accounting ─────────────────────────────────────────────────
+
+class _StatLLM(BaseLLMClient):
+    def __init__(self, proposals):
+        from collections import deque
+        self._q = deque(proposals)
+        self.last_stats = None
+
+    def call(self, llm_input):
+        from agent.llm import LLMCallStats
+        self.last_stats = LLMCallStats(prompt_tokens=100, completion_tokens=20,
+                                       total_tokens=120, latency_ms=5.0)
+        return self._q.popleft()
+
+
+def test_run_turn_accumulates_llm_token_usage():
+    case = CaseState()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
+    assert case.llm_calls == 1
+    assert case.prompt_tokens == 100
+    assert case.completion_tokens == 20
+
+
+def test_run_turn_accumulates_latency():
+    case = CaseState()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
+    assert case.llm_latency_ms >= 5.0
+
+
 # ── LLMClientError handling ───────────────────────────────────────────────────
 
 class _FailingLLM(BaseLLMClient):

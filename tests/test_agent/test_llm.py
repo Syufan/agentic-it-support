@@ -135,3 +135,50 @@ def test_real_llm_raises_for_empty_choices():
     client = RealLLMClient(api_key="", client=_FakeOpenAIClientNoChoices())
     with pytest.raises(LLMResponseError, match="no choices"):
         client.call(_llm_input())
+
+
+# ── cost / latency stats ──────────────────────────────────────────────────────
+
+class _Usage:
+    prompt_tokens = 120
+    completion_tokens = 30
+    total_tokens = 150
+
+
+class _FakeResponseWithUsage(_FakeResponse):
+    def __init__(self, content: str) -> None:
+        super().__init__(content)
+        self.usage = _Usage()
+
+
+class _FakeCompletionsWithUsage:
+    def create(self, **kwargs):
+        return _FakeResponseWithUsage('{"action": "ask_user", "confidence": 0.6, '
+                                      '"reasoning_summary": "x", "message": "hi"}')
+
+
+class _FakeOpenAIClientWithUsage:
+    class _Chat:
+        completions = _FakeCompletionsWithUsage()
+    chat = _Chat()
+
+
+def test_real_llm_records_token_usage():
+    client = RealLLMClient(api_key="", client=_FakeOpenAIClientWithUsage())
+    client.call(_llm_input())
+    assert client.last_stats is not None
+    assert client.last_stats.prompt_tokens == 120
+    assert client.last_stats.completion_tokens == 30
+
+
+def test_real_llm_records_latency():
+    client = RealLLMClient(api_key="", client=_FakeOpenAIClientWithUsage())
+    client.call(_llm_input())
+    assert client.last_stats.latency_ms >= 0.0
+
+
+def test_real_llm_stats_default_zero_without_usage():
+    client = RealLLMClient(api_key="", client=_FakeOpenAIClient(
+        '{"action": "ask_user", "confidence": 0.6, "reasoning_summary": "x", "message": "hi"}'))
+    client.call(_llm_input())
+    assert client.last_stats.prompt_tokens == 0
