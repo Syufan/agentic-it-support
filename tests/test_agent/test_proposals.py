@@ -1,14 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
-from agent.decisions import AgentAction, AgentDecision
+from agent.proposals import AgentAction, AgentProposal
 from state.case_state import MissingInfoSource
 
 
 # ── valid decisions per action ────────────────────────────────────────────────
 
 def test_ask_user_decision():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.ASK_USER,
         confidence=0.6,
         reasoning_summary="Missing OS info",
@@ -21,7 +21,7 @@ def test_ask_user_decision():
 
 
 def test_call_tool_decision():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.CALL_TOOL,
         confidence=0.65,
         reasoning_summary="Need to check KB for VPN issues",
@@ -34,7 +34,7 @@ def test_call_tool_decision():
 
 
 def test_resolve_decision():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.RESOLVE,
         confidence=0.9,
         reasoning_summary="KB article matches issue exactly",
@@ -46,7 +46,7 @@ def test_resolve_decision():
 
 
 def test_escalate_decision():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
         reasoning_summary="Issue requires admin access",
@@ -60,7 +60,7 @@ def test_escalate_decision():
 
 @pytest.mark.parametrize("confidence", [0.0, 0.5, 1.0])
 def test_confidence_valid_boundaries(confidence):
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.RESOLVE,
         confidence=confidence,
         reasoning_summary="test",
@@ -71,7 +71,7 @@ def test_confidence_valid_boundaries(confidence):
 @pytest.mark.parametrize("confidence", [-0.1, 1.1, 2.0])
 def test_confidence_out_of_range_rejected(confidence):
     with pytest.raises(ValidationError):
-        AgentDecision(
+        AgentProposal(
             action=AgentAction.RESOLVE,
             confidence=confidence,
             reasoning_summary="test",
@@ -81,7 +81,7 @@ def test_confidence_out_of_range_rejected(confidence):
 # ── user_confirmed_resolution ─────────────────────────────────────────────────
 
 def test_user_confirmed_resolution_true():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.RESOLVE,
         confidence=0.9,
         reasoning_summary="User confirmed",
@@ -91,7 +91,7 @@ def test_user_confirmed_resolution_true():
 
 
 def test_user_confirmed_resolution_false():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.RESOLVE,
         confidence=0.9,
         reasoning_summary="User not resolved",
@@ -101,7 +101,7 @@ def test_user_confirmed_resolution_false():
 
 
 def test_user_confirmed_resolution_defaults_to_none():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.ASK_USER,
         confidence=0.6,
         reasoning_summary="test",
@@ -112,7 +112,7 @@ def test_user_confirmed_resolution_defaults_to_none():
 # ── defaults ──────────────────────────────────────────────────────────────────
 
 def test_defaults():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.ASK_USER,
         confidence=0.5,
         reasoning_summary="test",
@@ -138,13 +138,13 @@ def test_parse_from_dict():
         "tool_input": {"query": "password reset"},
         "missing_info_source": "tool",
     }
-    d = AgentDecision.model_validate(raw)
+    d = AgentProposal.model_validate(raw)
     assert d.action == AgentAction.CALL_TOOL
     assert d.tool_name == "kb_search"
 
 
 def test_serialize_to_json():
-    d = AgentDecision(
+    d = AgentProposal(
         action=AgentAction.ESCALATE,
         confidence=0.2,
         reasoning_summary="Out of scope",

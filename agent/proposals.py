@@ -13,11 +13,12 @@ class AgentAction(str, Enum):
     ESCALATE = "escalate"
 
 
-class AgentDecision(BaseModel):
-    """Structured proposal returned by the LLM.
+class AgentProposal(BaseModel):
+    """Structured proposal returned by the LLM each turn.
 
     The runtime validates this object, projects selected fields into CaseState,
     and then evaluates deterministic transition rules.
+    The LLM proposes; the Runtime decides and executes.
     """
 
     action: AgentAction

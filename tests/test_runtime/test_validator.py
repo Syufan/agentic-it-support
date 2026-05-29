@@ -1,18 +1,18 @@
 import pytest
-from agent.decisions import AgentAction, AgentDecision
+from agent.proposals import AgentAction, AgentProposal
 from runtime.validator import validate_decision
 from state.case_state import CaseState, MissingInfoSource, Phase
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def decision(**kwargs) -> AgentDecision:
+def decision(**kwargs) -> AgentProposal:
     defaults = {
         "action": AgentAction.ASK_USER,
         "confidence": 0.6,
         "reasoning_summary": "test",
     }
-    return AgentDecision(**(defaults | kwargs))
+    return AgentProposal(**(defaults | kwargs))
 
 def case_in(phase: Phase) -> CaseState:
     return CaseState(phase=phase)

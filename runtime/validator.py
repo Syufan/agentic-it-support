@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from agent.decisions import AgentAction, AgentDecision
+from agent.proposals import AgentAction, AgentProposal
 from state.case_state import CaseState, Phase
 
 VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"}
@@ -21,7 +21,7 @@ class ValidationResult:
     reason: str | None = None
 
 
-def validate_decision(case: CaseState, decision: AgentDecision) -> ValidationResult:
+def validate_decision(case: CaseState, decision: AgentProposal) -> ValidationResult:
     if decision.action not in _ALLOWED_ACTIONS[case.phase]:
         return ValidationResult(False, f"{decision.action} not allowed in phase {case.phase}")
 
