@@ -20,7 +20,7 @@ Respond with a single JSON object and nothing else:
   "missing_info": ["list", "of", "missing", "items"],
 
   // if action = call_tool
-  "tool_name": "kb_search" | "status_api" | "user_directory",
+  "tool_name": "kb_search" | "status_api" | "user_directory" | "resolution_history" | "policy_lookup",
   "tool_input": { "query": "..." }
 }
 ```
@@ -29,4 +29,6 @@ Respond with a single JSON object and nothing else:
 - `kb_search`: search IT knowledge base articles. Input: `{"query": "..."}`.
 - `status_api`: check service health and known incidents. Input: `{}` or `{"service": "VPN"}`.
 - `user_directory`: look up employee info and permissions. Input: `{"user_id": "..."}` or `{"email": "..."}`.
+- `resolution_history`: find how similar past tickets were resolved. Input: `{"query": "..."}`.
+- `policy_lookup`: check whether an action is allowed for the agent or needs human approval. Input: `{}` or `{"query": "..."}`.
 """
