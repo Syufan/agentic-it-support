@@ -114,5 +114,5 @@ def log_case_closed(case: CaseState) -> None:
         "resolution_attempts": case.resolution_attempts,
         "final_confidence": case.confidence,
         "facts": case.facts,
-        "escalation_context": case.escalation_context or None,
+        "escalation_context": case.escalation_context,
     }))

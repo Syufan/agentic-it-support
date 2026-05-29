@@ -14,17 +14,10 @@ from agent.llm import RealLLMClient
 from evaluation import EvaluationResult, evaluate
 from runtime.controller import run_turn
 from state.case_state import CaseState
-from tools.kb_search import KBSearchTool
-from tools.status_api import StatusAPITool
-from tools.user_directory import UserDirectoryTool
+from tools import DEFAULT_TOOLS
 
 _SCENARIOS_DIR = Path(__file__).parent / "scenarios"
-
-_TOOLS = {
-    "kb_search": KBSearchTool(),
-    "status_api": StatusAPITool(),
-    "user_directory": UserDirectoryTool(),
-}
+_llm = RealLLMClient()
 
 
 @dataclass
@@ -39,11 +32,19 @@ class ScenarioResult:
 def run_scenario(path: Path) -> ScenarioResult:
     scenario = json.loads(path.read_text())
     case = CaseState()
-    llm = RealLLMClient()
     responses: list[str] = []
 
-    for message in scenario["messages"]:
-        responses.append(run_turn(case, message, llm, _TOOLS))
+    try:
+        for message in scenario["messages"]:
+            responses.append(run_turn(case, message, _llm, DEFAULT_TOOLS))
+    except Exception as exc:
+        return ScenarioResult(
+            name=scenario.get("name", path.stem),
+            passed=False,
+            evaluation=evaluate(case),
+            responses=responses,
+            failure_reason=f"exception: {exc}",
+        )
 
     result = evaluate(case)
     passed, reason = _check(result, scenario.get("expect", {}))

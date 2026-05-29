@@ -361,3 +361,87 @@ def test_llm_error_does_not_raise():
         run_turn(case, "VPN broken", _FailingLLM(), {})
     except Exception as exc:
         pytest.fail(f"run_turn raised unexpectedly: {exc}")
+
+
+def test_llm_error_closes_case():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_llm_error_sets_handoff_completed():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.handoff_completed is True
+
+
+def test_llm_error_builds_escalation_context():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context
+
+
+# ── policy block ──────────────────────────────────────────────────────────────
+
+def test_policy_block_closes_case():
+    # INVESTIGATING, confidence=0.6 >= CONFIDENCE_LOW, budget=0 → premature escalation blocked
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_policy_block_sets_handoff_completed():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.handoff_completed is True
+
+
+def test_policy_block_builds_escalation_context():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context
+
+
+def test_policy_block_returns_specialist_message():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                  escalation_reason="needs help", message=None),
+    ]), {})
+    assert "specialist" in response.lower()
+
+
+# ── validate_proposal failure ─────────────────────────────────────────────────
+
+def test_validate_failure_closes_case():
+    # INTAKE phase: RESOLVE is not an allowed action → validator rejects
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_validate_failure_sets_handoff_completed():
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.handoff_completed is True
+
+
+def test_validate_failure_builds_escalation_context():
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    assert case.escalation_context != {}
+    assert "escalation_reason" in case.escalation_context

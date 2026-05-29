@@ -73,6 +73,8 @@ class RealLLMClient(BaseLLMClient):
         except OpenAIError as exc:
             raise LLMProviderError(f"LLM provider request failed: {exc}") from exc
 
+        if not response.choices:
+            raise LLMResponseError("LLM returned no choices")
         raw = response.choices[0].message.content or "{}"
         try:
             return AgentProposal.model_validate(json.loads(raw))

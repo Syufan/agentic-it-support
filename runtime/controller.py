@@ -14,7 +14,7 @@ from policy import check as policy_check
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
-from state.case_state import CaseState, ToolTrace
+from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
@@ -37,35 +37,19 @@ def run_turn(
         try:
             proposal = llm.call(llm_input)
         except LLMClientError:
-            response = (
-                "I encountered a technical issue. "
-                "Transferring you to a specialist."
-            )
-            case.conversation.append({"role": "assistant", "content": response})
-            return response
+            return _force_escalate(case, "LLM provider error during investigation")
 
         validation = validate_proposal(case, proposal)
         if not validation.valid:
-            response = (
-                "I ran into an issue processing your request. "
-                "Transferring you to a specialist."
-            )
-            case.conversation.append({"role": "assistant", "content": response})
-            return response
+            return _force_escalate(case, f"invalid LLM response: {validation.reason}")
 
         policy = policy_check(case, proposal)
         if not policy.allowed:
-            response = (
-                "I wasn't able to complete that action due to a policy constraint. "
-                "Transferring you to a specialist."
-            )
-            case.conversation.append({"role": "assistant", "content": response})
-            return response
+            return _force_escalate(case, f"policy constraint: {policy.reason}")
 
         _project_to_state(case, proposal)
 
         if proposal.action == AgentAction.CALL_TOOL:
-            from_phase = case.phase.value
             _execute_tool(case, proposal, tool_registry)
             if event_log:
                 last_trace = case.tool_traces[-1]
@@ -85,7 +69,7 @@ def run_turn(
             case.resolution_attempts += 1
 
         if proposal.action == AgentAction.ESCALATE:
-            _build_escalation_context(case, proposal)
+            _build_escalation_context(case, proposal.escalation_reason, proposal.confidence)
             case.handoff_completed = True
             if event_log:
                 record_escalation(event_log, case, proposal.escalation_reason or "")
@@ -99,12 +83,21 @@ def run_turn(
         case.conversation.append({"role": "assistant", "content": response})
         return response
 
-    response = (
-        "I was unable to resolve this within the allotted steps. "
-        "Transferring to a specialist with full context."
+    return _force_escalate(case, "maximum investigation steps reached without resolution")
+
+
+def _force_escalate(case: CaseState, reason: str) -> str:
+    _build_escalation_context(case, reason, case.confidence)
+    case.phase = Phase.ESCALATING
+    case.handoff_completed = True
+    _apply_transition(case, evaluate_transition(case))
+    msg = (
+        "I wasn't able to fully resolve this issue. "
+        "I'm connecting you with an IT specialist who will have all the context — "
+        "you won't need to repeat yourself."
     )
-    case.conversation.append({"role": "assistant", "content": response})
-    return response
+    case.conversation.append({"role": "assistant", "content": msg})
+    return msg
 
 
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
@@ -158,13 +151,17 @@ def _apply_transition(case: CaseState, result: TransitionResult) -> None:
         case.exception_used = True
 
 
-def _build_escalation_context(case: CaseState, proposal: AgentProposal) -> None:
+def _build_escalation_context(
+    case: CaseState,
+    reason: str | None,
+    confidence: float,
+) -> None:
     issue_description = next(
         (m["content"] for m in case.conversation if m["role"] == "user"), ""
     )
     case.escalation_context = {
-        "escalation_reason": proposal.escalation_reason,
-        "confidence": proposal.confidence,
+        "escalation_reason": reason,
+        "confidence": confidence,
         "issue_description": issue_description,
         "conversation": list(case.conversation),
         "facts": dict(case.facts),
