@@ -19,6 +19,7 @@ from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
+_MAX_CORRECTIONS = 3
 
 
 class TurnCancelled(Exception):
@@ -38,11 +39,14 @@ def run_turn(
     if event_log:
         record_turn_start(event_log, case)
 
+    correction: str | None = None
+    corrections = 0
     for _ in range(_MAX_INNER_ITERATIONS):
         if should_cancel and should_cancel():
             raise TurnCancelled()
 
-        llm_input = build_messages(case)
+        llm_input = build_messages(case, correction=correction)
+        correction = None
         try:
             proposal = llm.call(llm_input)
         except LLMClientError:
@@ -53,13 +57,31 @@ def run_turn(
         if should_cancel and should_cancel():
             raise TurnCancelled()
 
+        # A guardrail violation is correctable: feed the reason back and let the
+        # agent revise on the next iteration (bounded by _MAX_INNER_ITERATIONS),
+        # rather than terminating the case on the first stumble.
         validation = validate_proposal(case, proposal)
         if not validation.valid:
-            return _force_escalate(case, f"invalid LLM response: {validation.reason}")
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(case, f"repeated invalid proposals: {validation.reason}")
+            correction = (
+                f"Your previous response was rejected: {validation.reason}. "
+                "Choose an action that is valid in the current phase and try again."
+            )
+            continue
 
         policy = policy_check(case, proposal)
         if not policy.allowed:
-            return _force_escalate(case, f"policy constraint: {policy.reason}")
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(case, f"repeated policy violations: {policy.reason}")
+            correction = (
+                f"That action is not permitted yet: {policy.reason}. "
+                "Gather more evidence with a tool, ask the user a clarifying "
+                "question, or only escalate once you genuinely cannot proceed."
+            )
+            continue
 
         _project_to_state(case, proposal)
 

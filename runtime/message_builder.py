@@ -20,10 +20,13 @@ class LLMInput:
     messages: list[dict[str, str]]
 
 
-def build_messages(case: CaseState) -> LLMInput:
+def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
     system = _PROMPTS.get(case.phase, investigating.SYSTEM_PROMPT)
     messages = [dict(m) for m in case.conversation]
     observation = _build_observation(case)
+
+    if correction:
+        observation = observation + "\n\n[Correction] " + correction
 
     if messages and messages[-1]["role"] == "user":
         messages[-1]["content"] = messages[-1]["content"] + "\n\n" + observation

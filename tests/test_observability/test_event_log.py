@@ -98,7 +98,7 @@ def test_tool_call_event_recorded():
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
 
@@ -116,7 +116,7 @@ def test_tool_call_event_records_success():
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
 
