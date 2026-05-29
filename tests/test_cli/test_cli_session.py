@@ -1,6 +1,6 @@
 from agent.llm import MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from cli import run_cli_session
+from cli import run_cli_session, typewrite
 from state.case_state import CaseState, Phase
 
 
@@ -96,9 +96,8 @@ def test_empty_input_is_skipped():
 
 # ── output ────────────────────────────────────────────────────────────────────
 
-def test_agent_response_is_written():
+def test_agent_response_is_written(capsys):
     case = CaseState()
-    output = []
     messages = ["VPN broken"]
     idx = [0]
 
@@ -114,11 +113,10 @@ def test_agent_response_is_written():
         MockLLMClient([_proposal(message="What OS are you using?")]),
         {},
         reader=_reader,
-        writer=output.append,
+        writer=lambda _: None,
     )
 
-    joined = " ".join(str(o) for o in output)
-    assert "What OS are you using?" in joined
+    assert "What OS are you using?" in capsys.readouterr().out
 
 
 def test_esc_key_exits_gracefully():
@@ -168,3 +166,23 @@ def test_welcome_message_is_printed():
 
     joined = " ".join(str(o) for o in output).lower()
     assert "support" in joined or "ready" in joined or "agent" in joined
+
+
+# ── typewrite ─────────────────────────────────────────────────────────────────
+
+def test_typewrite_outputs_all_characters():
+    output = []
+    typewrite("hello", writer=output.append, delay=0)
+    assert "".join(output) == "hello"
+
+
+def test_typewrite_writes_one_char_at_a_time():
+    output = []
+    typewrite("hi", writer=output.append, delay=0)
+    assert output == ["h", "i"]
+
+
+def test_typewrite_empty_string_writes_nothing():
+    output = []
+    typewrite("", writer=output.append, delay=0)
+    assert output == []

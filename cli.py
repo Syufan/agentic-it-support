@@ -1,4 +1,5 @@
 import sys
+import time
 from collections.abc import Callable
 
 from agent.llm import BaseLLMClient, RealLLMClient
@@ -14,6 +15,17 @@ _TOOLS = {
     "status_api": StatusAPITool(),
     "user_directory": UserDirectoryTool(),
 }
+
+
+def typewrite(
+    text: str,
+    writer: Callable[[str], None] = lambda c: (sys.stdout.write(c), sys.stdout.flush()),
+    delay: float = 0.015,
+) -> None:
+    for char in text:
+        writer(char)
+        if delay:
+            time.sleep(delay)
 
 
 def run_cli_session(
@@ -42,7 +54,10 @@ def run_cli_session(
         spinner.start()
         response = run_turn(case, user_input, llm, tools)
         spinner.stop()
-        writer(f"Agent: {response}\n")
+        sys.stdout.write("Agent: ")
+        sys.stdout.flush()
+        typewrite(response)
+        sys.stdout.write("\n")
         writer(f"[phase: {case.phase.value}]")
 
 
