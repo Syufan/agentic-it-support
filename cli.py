@@ -36,8 +36,8 @@ def typewrite(
 def _content_lines(display: list[tuple[str, str]]) -> int:
     count = 1  # leading blank line
     for _, msg in display:
-        count += len(msg.splitlines())
-        count += 1  # blank line after each message
+        count += len(msg.splitlines())  # message (may be multi-line)
+        count += 1                      # blank line after
     return count
 
 
@@ -52,9 +52,10 @@ def _render(
     writer("")
     for role, msg in display:
         if role == "agent":
-            writer(f"Agent: {msg}\n")
+            writer(f"Agent: {msg}")
         else:
-            writer(f"> {msg}\n")
+            writer(f"> {msg}")
+        writer("")
 
     # pad to push divider to bottom (-3: divider + phase line + input prompt)
     padding = max(0, term_height - _content_lines(display) - 3)
@@ -108,12 +109,11 @@ def run_cli_session(
         sys.stdout.write("Agent: ")
         sys.stdout.flush()
         typewrite(response)
-        sys.stdout.write("\n\n")
+        sys.stdout.write("\n")
         sys.stdout.flush()
 
         display.append(("agent", response))
-        writer(_DIVIDER)
-        writer(f"[{case.phase.value}]  Ctrl+C to quit")
+        render()
 
 
 if __name__ == "__main__":
