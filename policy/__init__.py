@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from agent.proposals import AgentAction, AgentProposal
 from config import CONFIDENCE_HIGH, CONFIDENCE_LOW
 from state import budget as budget_
-from state.case_state import CaseState
+from state.case_state import CaseState, Phase
 
 
 @dataclass
@@ -13,7 +13,7 @@ class PolicyDecision:
 
 
 def check(case: CaseState, proposal: AgentProposal) -> PolicyDecision:
-    if proposal.action == AgentAction.ESCALATE:
+    if proposal.action == AgentAction.ESCALATE and case.phase != Phase.ESCALATING:
         budget_ok = not budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation)
         if budget_ok and proposal.confidence >= CONFIDENCE_LOW:
             return PolicyDecision(

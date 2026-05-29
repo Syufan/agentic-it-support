@@ -43,6 +43,14 @@ def test_escalate_allowed_when_budget_exhausted():
     assert decision.allowed
 
 
+def test_escalate_allowed_when_already_in_escalating_phase():
+    case = _case(phase=Phase.ESCALATING, tool_calls_current_investigation=0,
+                 budget_mode=BudgetMode.MAIN)
+    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                         escalation_reason="needs help", message=None)
+    assert check(case, proposal).allowed
+
+
 def test_escalate_allowed_when_confidence_below_low():
     case = _case(tool_calls_current_investigation=0, budget_mode=BudgetMode.MAIN)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
