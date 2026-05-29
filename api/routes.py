@@ -2,7 +2,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from functools import lru_cache
 
 from agent.llm import BaseLLMClient, LLMClientError, RealLLMClient
-from api.schemas import ChatRequest, ChatResponse
+from api.schemas import CaseView, ChatRequest, ChatResponse
 from runtime.controller import run_turn
 from state.case_state import Phase
 from state.session import SessionStore, store as _default_store
@@ -63,4 +63,24 @@ def chat(
         message=message,
         phase=case.phase.value,
         is_closed=case.phase == Phase.CLOSED,
+    )
+
+
+@app.get("/case/{case_id}", response_model=CaseView)
+def get_case(
+    case_id: str,
+    store: SessionStore = Depends(get_store),
+) -> CaseView:
+    case = store.get(case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="case not found")
+
+    return CaseView(
+        case_id=case.case_id,
+        phase=case.phase.value,
+        is_closed=case.phase == Phase.CLOSED,
+        confidence=case.confidence,
+        tool_calls_total=case.tool_calls_total,
+        facts=case.facts,
+        escalation_context=case.escalation_context or None,
     )

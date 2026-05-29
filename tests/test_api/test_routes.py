@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.routes import app, get_llm, get_store, get_tool_registry
+from state.case_state import MissingInfoSource
 from state.session import SessionStore
 from tools.base import BaseTool, ToolResult
 from typing import Any
@@ -110,6 +111,54 @@ def test_chat_unknown_case_id_returns_404(persistent_store):
     c = TestClient(app)
     response = c.post("/chat", json={"message": "VPN broken", "case_id": "nonexistent-id"})
     assert response.status_code == 404
+
+    app.dependency_overrides.clear()
+
+
+# ── case retrieval / escalation handoff ───────────────────────────────────────
+
+def test_get_case_returns_404_for_unknown_id(client):
+    assert client.get("/case/nonexistent-id").status_code == 404
+
+
+def test_get_case_returns_state_and_handoff(persistent_store):
+    # drive a turn that investigates then escalates so an escalation_context exists
+    llm = MockLLMClient([
+        _proposal(action=AgentAction.CALL_TOOL, confidence=0.6, tool_name="kb_search",
+                  tool_input={"query": "vpn"}, message=None,
+                  missing_info_source=MissingInfoSource.TOOL),
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="needs admin access", message=None),
+    ])
+    app.dependency_overrides[get_store] = lambda: persistent_store
+    app.dependency_overrides[get_llm] = lambda: llm
+    app.dependency_overrides[get_tool_registry] = lambda: {}
+
+    c = TestClient(app)
+    case_id = c.post("/chat", json={"message": "VPN broken"}).json()["case_id"]
+
+    r = c.get(f"/case/{case_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["case_id"] == case_id
+    assert "phase" in body and "is_closed" in body
+    assert body["escalation_context"]["escalation_reason"] == "needs admin access"
+    assert "conversation" in body["escalation_context"]
+
+    app.dependency_overrides.clear()
+
+
+def test_get_case_escalation_context_null_when_not_escalated(persistent_store):
+    llm = MockLLMClient([_proposal()])  # ask_user, no escalation
+    app.dependency_overrides[get_store] = lambda: persistent_store
+    app.dependency_overrides[get_llm] = lambda: llm
+    app.dependency_overrides[get_tool_registry] = lambda: {}
+
+    c = TestClient(app)
+    case_id = c.post("/chat", json={"message": "VPN broken"}).json()["case_id"]
+
+    body = c.get(f"/case/{case_id}").json()
+    assert body["escalation_context"] is None
 
     app.dependency_overrides.clear()
 
