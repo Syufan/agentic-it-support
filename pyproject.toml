@@ -5,6 +5,7 @@ description = "Agentic IT Helpdesk Support Agent"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.3",
+    "openai>=2.38.0",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "uvicorn>=0.48.0",
