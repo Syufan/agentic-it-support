@@ -23,7 +23,13 @@ class LLMInput:
 def build_messages(case: CaseState) -> LLMInput:
     system = _PROMPTS.get(case.phase, investigating.SYSTEM_PROMPT)
     messages = [dict(m) for m in case.conversation]
-    messages.append({"role": "user", "content": _build_observation(case)})
+    observation = _build_observation(case)
+
+    if messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] = messages[-1]["content"] + "\n\n" + observation
+    else:
+        messages.append({"role": "user", "content": observation})
+
     return LLMInput(system=system, messages=messages)
 
 
