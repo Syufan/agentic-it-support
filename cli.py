@@ -9,15 +9,9 @@ from observability.spinner import Spinner
 from runtime.controller import run_turn
 from state import budget as budget_
 from state.case_state import CaseState, Phase
-from tools.kb_search import KBSearchTool
-from tools.status_api import StatusAPITool
-from tools.user_directory import UserDirectoryTool
+from tools import DEFAULT_TOOLS
 
-_TOOLS = {
-    "kb_search": KBSearchTool(),
-    "status_api": StatusAPITool(),
-    "user_directory": UserDirectoryTool(),
-}
+_TOOLS = DEFAULT_TOOLS
 
 _DIM = "\033[2m"
 _BOLD = "\033[1m"
