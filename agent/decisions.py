@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from state.case_state import MissingInfoSource
 
 
-class Action(str, Enum):
+class AgentAction(str, Enum):
     ASK_USER = "ask_user"
     CALL_TOOL = "call_tool"
     RESOLVE = "resolve"
@@ -14,7 +14,13 @@ class Action(str, Enum):
 
 
 class AgentDecision(BaseModel):
-    action: Action
+    """Structured proposal returned by the LLM.
+
+    The runtime validates this object, projects selected fields into CaseState,
+    and then evaluates deterministic transition rules.
+    """
+
+    action: AgentAction
     confidence: float = Field(ge=0.0, le=1.0)
     reasoning_summary: str
 
