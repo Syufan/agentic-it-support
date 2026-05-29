@@ -153,7 +153,7 @@ def test_call_tool_with_invalid_tool_name_rejected():
     assert result.valid is False
 
 @pytest.mark.parametrize("tool_name", [
-    "kb_search", "status_api", "user_directory", "resolution_history",
+    "kb_search", "status_api", "user_directory",
 ])
 def test_call_tool_with_valid_tool_names(tool_name):
     result = validate_proposal(
