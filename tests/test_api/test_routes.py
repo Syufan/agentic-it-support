@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.llm import MockLLMClient
+from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.routes import app, get_llm, get_store, get_tool_registry
 from state.session import SessionStore
@@ -111,5 +111,23 @@ def test_chat_unknown_case_id_creates_new_case(persistent_store):
     response = c.post("/chat", json={"message": "VPN broken", "case_id": "nonexistent-id"})
     assert response.status_code == 200
     assert response.json()["case_id"] != "nonexistent-id"
+
+    app.dependency_overrides.clear()
+
+
+def test_chat_returns_503_when_llm_fails(persistent_store):
+    class FailingLLM(BaseLLMClient):
+        def call(self, llm_input):
+            raise LLMProviderError("LLM model unavailable")
+
+    app.dependency_overrides[get_store] = lambda: persistent_store
+    app.dependency_overrides[get_llm] = lambda: FailingLLM()
+    app.dependency_overrides[get_tool_registry] = lambda: {}
+
+    c = TestClient(app)
+    response = c.post("/chat", json={"message": "VPN broken"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "LLM model unavailable"
 
     app.dependency_overrides.clear()
