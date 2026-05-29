@@ -1,12 +1,13 @@
 import os
 import sys
+import threading
 import time
 from collections.abc import Callable
 
 from agent.llm import BaseLLMClient, RealLLMClient
 from observability.logger import InMemoryEventLog
 from observability.spinner import Spinner
-from runtime.controller import run_turn
+from runtime.controller import TurnCancelled, run_turn
 from state import budget as budget_
 from state.case_state import CaseState, Phase
 from tools import DEFAULT_TOOLS
@@ -16,6 +17,7 @@ _TOOLS = DEFAULT_TOOLS
 _DIM = "\033[2m"
 _BOLD = "\033[1m"
 _RESET = "\033[0m"
+_ESC = "\x1b"
 
 _HELP = """Commands:
   /help     show commands
@@ -47,9 +49,11 @@ def run_cli_session(
     get_term_size: Callable[[], tuple[int, int]] | None = None,
     cursor_up: Callable[[int], None] | None = None,
     spinner_factory: Callable[[Callable[[], str]], object] | None = None,
+    turn_runner: Callable[..., str] | None = None,
 ) -> None:
     del get_term_size, cursor_up  # compatibility hooks for older tests.
 
+    run_one_turn = turn_runner or _interruptible_run_turn
     event_log = InMemoryEventLog()
     _print_header(writer)
 
@@ -62,10 +66,6 @@ def run_cli_session(
 
         if not user_input:
             continue
-
-        if user_input == "\x1b":
-            writer("\nGoodbye.")
-            break
 
         if user_input.startswith("/"):
             if _handle_command(user_input, case, event_log, writer, clear):
@@ -80,15 +80,91 @@ def run_cli_session(
                 writer=lambda text: (sys.stdout.write(f"{_DIM}{text}{_RESET}"), sys.stdout.flush()),
             )
         spinner.start()
+        cancelled = False
         try:
-            response = run_turn(case, user_input, llm, tools, event_log=event_log)
+            response = run_one_turn(case, user_input, llm, tools, event_log)
+        except TurnCancelled:
+            cancelled = True
         finally:
             spinner.stop()
+
+        if cancelled:
+            writer(f"{_DIM}— turn cancelled, continue the conversation —{_RESET}")
+            continue
 
         writer(response)
 
     if case.phase == Phase.CLOSED:
         writer(f"{_DIM}case closed: {case.case_id}{_RESET}")
+
+
+def _interruptible_run_turn(
+    case: CaseState,
+    user_input: str,
+    llm: BaseLLMClient,
+    tools: dict,
+    event_log: InMemoryEventLog,
+) -> str:
+    """Run a turn, letting the user cancel it by pressing ESC while it works.
+
+    The turn runs on a worker thread while this thread watches stdin (in cbreak
+    mode) for ESC. Cancellation is cooperative: it takes effect at the next
+    checkpoint in run_turn, so an in-flight provider call finishes first. When
+    stdin is not a real terminal (tests, pipes) we just run the turn directly.
+    """
+    if not _stdin_is_tty():
+        return run_turn(case, user_input, llm, tools, event_log=event_log)
+
+    try:
+        import select
+        import termios
+        import tty
+    except ImportError:  # non-POSIX terminal: fall back to a plain turn
+        return run_turn(case, user_input, llm, tools, event_log=event_log)
+
+    cancel = threading.Event()
+    box: dict = {}
+
+    def _work() -> None:
+        try:
+            box["value"] = run_turn(
+                case, user_input, llm, tools,
+                event_log=event_log, should_cancel=cancel.is_set,
+            )
+        except TurnCancelled:
+            box["cancelled"] = True
+        except BaseException as exc:  # surface any other failure to the caller
+            box["error"] = exc
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+
+    fd = sys.stdin.fileno()
+    old_attrs = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while worker.is_alive():
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready and sys.stdin.read(1) == _ESC:
+                cancel.set()
+                break
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+
+    worker.join()
+
+    if "error" in box:
+        raise box["error"]
+    if box.get("cancelled"):
+        raise TurnCancelled()
+    return box["value"]
+
+
+def _stdin_is_tty() -> bool:
+    try:
+        return sys.stdin.isatty()
+    except (ValueError, AttributeError):
+        return False
 
 
 def _print_header(writer: Callable[[str], None]) -> None:

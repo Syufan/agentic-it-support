@@ -1,6 +1,7 @@
 from agent.llm import BaseLLMClient, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from cli import _format_status, run_cli_session, typewrite
+from runtime.controller import TurnCancelled
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, Phase
 
@@ -95,15 +96,56 @@ def test_session_exits_on_eof():
     assert any("goodbye" in str(o).lower() for o in output)
 
 
-def test_esc_key_exits_gracefully():
+def test_cancelled_turn_does_not_exit_and_prompts_again():
+    case = CaseState()
+    output = []
+    calls = [0]
+
+    def _cancelling_runner(case, user_input, llm, tools, event_log):
+        calls[0] += 1
+        raise TurnCancelled()
+
+    run_cli_session(case, MockLLMClient([]), {},
+                    reader=_reader_from(["first", "second"]),
+                    writer=output.append, clear=_no_clear,
+                    spinner_factory=_noop_spinner_factory,
+                    turn_runner=_cancelling_runner)
+
+    # both messages were attempted — cancelling one turn did not end the session
+    assert calls[0] == 2
+    assert case.phase != Phase.CLOSED
+
+
+def test_cancelled_turn_prints_a_notice():
     case = CaseState()
     output = []
 
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=lambda _: "\x1b",
-                    writer=output.append, clear=_no_clear)
+    def _cancelling_runner(case, user_input, llm, tools, event_log):
+        raise TurnCancelled()
 
-    assert any("goodbye" in str(o).lower() for o in output)
+    run_cli_session(case, MockLLMClient([]), {},
+                    reader=_reader_from(["first"]),
+                    writer=output.append, clear=_no_clear,
+                    spinner_factory=_noop_spinner_factory,
+                    turn_runner=_cancelling_runner)
+
+    assert any("cancel" in str(o).lower() for o in output)
+
+
+def test_normal_turn_runner_response_is_written():
+    case = CaseState()
+    output = []
+
+    def _runner(case, user_input, llm, tools, event_log):
+        return "here is your answer"
+
+    run_cli_session(case, MockLLMClient([]), {},
+                    reader=_reader_from(["help"]),
+                    writer=output.append, clear=_no_clear,
+                    spinner_factory=_noop_spinner_factory,
+                    turn_runner=_runner)
+
+    assert any("here is your answer" in str(o) for o in output)
 
 
 # ── input handling ────────────────────────────────────────────────────────────

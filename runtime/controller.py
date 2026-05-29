@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from agent.llm import BaseLLMClient, LLMClientError
@@ -20,12 +21,17 @@ from tools.base import BaseTool, ToolResult
 _MAX_INNER_ITERATIONS = 10
 
 
+class TurnCancelled(Exception):
+    """Raised when the user interrupts a turn before it produces a response."""
+
+
 def run_turn(
     case: CaseState,
     user_message: str,
     llm: BaseLLMClient,
     tool_registry: dict[str, BaseTool],
     event_log: InMemoryEventLog | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> str:
     case.conversation.append({"role": "user", "content": user_message})
 
@@ -33,11 +39,19 @@ def run_turn(
         record_turn_start(event_log, case)
 
     for _ in range(_MAX_INNER_ITERATIONS):
+        if should_cancel and should_cancel():
+            raise TurnCancelled()
+
         llm_input = build_messages(case)
         try:
             proposal = llm.call(llm_input)
         except LLMClientError:
             return _force_escalate(case, "LLM provider error during investigation")
+
+        # The provider call is the blocking wait, so re-check here: this is what
+        # lets ESC interrupt the common single-call turn before we mutate state.
+        if should_cancel and should_cancel():
+            raise TurnCancelled()
 
         validation = validate_proposal(case, proposal)
         if not validation.valid:
