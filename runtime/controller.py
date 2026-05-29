@@ -112,17 +112,27 @@ def _apply_transition(case: CaseState, result: TransitionResult) -> None:
 
 
 def _build_escalation_context(case: CaseState, proposal: AgentProposal) -> None:
+    issue_description = next(
+        (m["content"] for m in case.conversation if m["role"] == "user"), ""
+    )
     case.escalation_context = {
         "escalation_reason": proposal.escalation_reason,
         "confidence": proposal.confidence,
+        "issue_description": issue_description,
+        "conversation": list(case.conversation),
         "facts": dict(case.facts),
         "hypotheses": list(case.hypotheses),
         "tool_traces": [
-            {"tool": t.tool_name, "success": t.success, "inputs": t.inputs}
+            {
+                "tool": t.tool_name,
+                "success": t.success,
+                "inputs": t.inputs,
+                "output": t.output,
+            }
             for t in case.tool_traces
         ],
         "failed_resolutions": list(case.failed_resolutions),
-        "conversation_turns": len(case.conversation),
+        "resolution_attempts": case.resolution_attempts,
     }
 
 
