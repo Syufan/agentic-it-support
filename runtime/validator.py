@@ -4,8 +4,6 @@ from agent.proposals import AgentAction, AgentProposal
 from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
-VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"}
-
 _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
     Phase.INTAKE:        {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
     Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.ESCALATE},
@@ -22,7 +20,14 @@ class ValidationResult:
     reason: str | None = None
 
 
-def validate_proposal(case: CaseState, proposal: AgentProposal) -> ValidationResult:
+def validate_proposal(
+    case: CaseState,
+    proposal: AgentProposal,
+    valid_tools: set[str],
+) -> ValidationResult:
+    """Validate a proposal. `valid_tools` is the single source of truth for which
+    tools the LLM may call — the caller passes the injected tool registry's keys,
+    so the validator keeps no separate hardcoded list that could drift from it."""
     if proposal.action not in _ALLOWED_ACTIONS[case.phase]:
         return ValidationResult(False, f"{proposal.action} not allowed in phase {case.phase}")
 
@@ -34,7 +39,7 @@ def validate_proposal(case: CaseState, proposal: AgentProposal) -> ValidationRes
         case AgentAction.CALL_TOOL:
             if not proposal.tool_name:
                 return ValidationResult(False, "call_tool requires tool_name")
-            if proposal.tool_name not in VALID_TOOLS:
+            if proposal.tool_name not in valid_tools:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
             if budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation):
                 return ValidationResult(False, "tool budget exhausted")

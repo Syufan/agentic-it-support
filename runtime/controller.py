@@ -73,7 +73,7 @@ def run_turn(
         # A guardrail violation is correctable: feed the reason back and let the
         # agent revise on the next iteration (bounded by _MAX_INNER_ITERATIONS),
         # rather than terminating the case on the first stumble.
-        validation = validate_proposal(case, proposal)
+        validation = validate_proposal(case, proposal, valid_tools=set(tool_registry))
         if not validation.valid:
             corrections += 1
             if corrections > _MAX_CORRECTIONS:

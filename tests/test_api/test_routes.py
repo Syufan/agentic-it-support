@@ -23,6 +23,14 @@ def _proposal(**kwargs) -> AgentProposal:
     })
 
 
+class _StubTool(BaseTool):
+    name = "kb_search"
+    description = "stub"
+
+    def run(self, inputs: dict[str, Any]) -> ToolResult:
+        return ToolResult(success=True, data={"results": []})
+
+
 @pytest.fixture
 def client():
     store = SessionStore()
@@ -141,7 +149,7 @@ def test_get_case_returns_state_and_handoff(persistent_store):
     ])
     app = ITSupportWebServer(
         llm=llm,
-        tools={},
+        tools={"kb_search": _StubTool()},
         store=persistent_store,
         turn_runner=run_turn,
     ).get_app()

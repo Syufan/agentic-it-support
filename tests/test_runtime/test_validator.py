@@ -1,7 +1,17 @@
 import pytest
 from agent.proposals import AgentAction, AgentProposal
-from runtime.validator import validate_proposal
+from runtime.validator import validate_proposal as _validate_proposal
 from state.case_state import CaseState, MissingInfoSource, Phase
+
+# Production validate_proposal requires the caller to inject the tool registry;
+# tests default to the standard set via this thin wrapper so existing call sites
+# stay unchanged. Tests that exercise the registry parameter pass valid_tools
+# explicitly and bypass the default.
+_TEST_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"}
+
+
+def validate_proposal(case, proposal, valid_tools=_TEST_TOOLS):
+    return _validate_proposal(case, proposal, valid_tools)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -187,6 +197,17 @@ def test_policy_lookup_is_not_llm_callable_tool():
     )
     assert result.valid is False
     assert "unknown tool" in result.reason
+
+
+def test_tool_validity_is_driven_by_passed_registry():
+    # The set of callable tools is whatever registry the caller injects — there is
+    # no second hardcoded source of truth inside the validator.
+    case = case_in(Phase.INVESTIGATING)
+    custom = proposal(action=AgentAction.CALL_TOOL, tool_name="custom_tool", tool_input={"q": "x"})
+    kb = proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"q": "x"})
+
+    assert validate_proposal(case, custom, valid_tools={"custom_tool"}).valid is True
+    assert validate_proposal(case, kb, valid_tools={"custom_tool"}).valid is False
 
 def test_resolve_without_message_rejected():
     result = validate_proposal(

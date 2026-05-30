@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from runtime.controller import TurnCancelled, _project_to_state, run_turn
+from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, MissingInfoSource, Phase
 from tools.base import BaseTool, ToolResult
@@ -463,16 +463,21 @@ def test_failed_tool_result_not_stored_in_facts():
     run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {"kb_search": tool})
     assert "kb_search_result" not in case.facts
 
+# A validated proposal can no longer reference a tool outside the registry
+# (validate_proposal checks against set(tool_registry)), so the missing-tool path
+# is unreachable via run_turn. _execute_tool still guards it defensively, so we
+# unit-test that branch directly rather than through the (now-blocked) turn loop.
+
 def test_missing_tool_records_failure_trace():
     case = CaseState(phase=Phase.INVESTIGATING)
-    case.confidence = 0.6
-    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {})
+    _execute_tool(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                                  tool_input={"query": "vpn"}, message=None), {})
     assert case.tool_traces[0].success is False
 
 def test_missing_tool_error_stored_in_facts():
     case = CaseState(phase=Phase.INVESTIGATING)
-    case.confidence = 0.6
-    run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {})
+    _execute_tool(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                                  tool_input={"query": "vpn"}, message=None), {})
     assert "kb_search_error" in case.facts
 
 
