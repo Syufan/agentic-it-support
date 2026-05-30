@@ -80,6 +80,20 @@ def test_of_type_returns_empty_for_unknown_type():
     assert log.of_type("nonexistent") == []
 
 
+def test_unbounded_by_default():
+    log = InMemoryEventLog()
+    for _ in range(100):
+        log.record(Event(type="t", case_id="x", phase="intake", confidence=0.0))
+    assert len(log.events()) == 100
+
+
+def test_max_events_drops_oldest():
+    log = InMemoryEventLog(max_events=2)
+    for i in range(3):
+        log.record(Event(type=str(i), case_id="x", phase="intake", confidence=0.0))
+    assert [e.type for e in log.events()] == ["1", "2"]
+
+
 # ── controller integration ────────────────────────────────────────────────────
 
 def test_turn_start_event_recorded():

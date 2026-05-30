@@ -1,3 +1,4 @@
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -14,8 +15,10 @@ class Event:
 
 
 class InMemoryEventLog:
-    def __init__(self) -> None:
-        self._events: list[Event] = []
+    def __init__(self, max_events: int | None = None) -> None:
+        # max_events=None keeps the log unbounded; a positive cap turns it into a
+        # ring buffer that drops the oldest events so it can't grow without limit.
+        self._events: deque[Event] = deque(maxlen=max_events)
 
     def record(self, event: Event) -> None:
         self._events.append(event)
