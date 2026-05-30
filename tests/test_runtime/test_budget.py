@@ -1,5 +1,5 @@
 import pytest
-from state.budget import exhausted, limit, remaining
+from runtime.budget import exhausted, limit, remaining
 from state.case_state import BudgetMode
 
 

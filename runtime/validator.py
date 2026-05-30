@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from agent.proposals import AgentAction, AgentProposal
-from state import budget as budget_
+from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
 VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"}

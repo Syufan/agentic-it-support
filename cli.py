@@ -9,7 +9,7 @@ from agent.parser import parse_proposal
 from observability.logger import InMemoryEventLog
 from observability.spinner import Spinner
 from runtime.controller import TurnCancelled, run_turn
-from state import budget as budget_
+from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 from tools import DEFAULT_TOOLS
 

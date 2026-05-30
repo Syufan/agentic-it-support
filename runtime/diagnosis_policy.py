@@ -3,7 +3,7 @@ import re
 
 from agent.proposals import AgentAction, AgentProposal
 from config import CONFIDENCE_HIGH
-from state import budget as budget_
+from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
 _VAGUE_INTAKE_MESSAGES = {

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from config import CONFIDENCE_HIGH, MAX_RESOLUTION_ATTEMPTS
-from state import budget as budget_
+from runtime import budget as budget_
 from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
 
 

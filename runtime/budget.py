@@ -1,3 +1,9 @@
+"""Tool-budget computation: how much of a budget mode is left / spent.
+
+Governance logic, so it lives in runtime/ and may read config. The state layer
+stays config-free: it only defines the BudgetMode enum.
+"""
+
 from config import EXCEPTION_TOOL_BUDGET, MAIN_TOOL_BUDGET, RETRY_TOOL_BUDGET
 from state.case_state import BudgetMode
 

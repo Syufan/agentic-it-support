@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 
 from agent.prompts import clarifying, escalating, intake, investigating, resolving
-from state import budget as budget_
+from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
 _PROMPTS: dict[Phase, str] = {
