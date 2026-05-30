@@ -1,14 +1,6 @@
-import json
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
-
-from config.settings import Settings
-from observability.cost import estimate_cost_usd
-from state.case_state import CaseState
-
-logger = logging.getLogger("agentic_it_support")
 
 
 @dataclass
@@ -36,44 +28,50 @@ class InMemoryEventLog:
 
 
 # ── helpers called by the controller ─────────────────────────────────────────
+# These take raw scalars (case_id / phase / confidence), not a CaseState, so the
+# observability layer has no dependency on the domain. The runtime extracts them.
 
-def record_turn_start(log: InMemoryEventLog, case: CaseState) -> None:
-    log.record(Event(
-        type="turn_start",
-        case_id=case.case_id,
-        phase=case.phase.value,
-        confidence=case.confidence,
-    ))
+def record_turn_start(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+) -> None:
+    log.record(Event(type="turn_start", case_id=case_id, phase=phase, confidence=confidence))
 
 
 def record_tool_call(
     log: InMemoryEventLog,
-    case: CaseState,
+    case_id: str,
+    phase: str,
+    confidence: float,
     tool_name: str,
     success: bool,
     inputs: dict[str, Any],
 ) -> None:
     log.record(Event(
         type="tool_call",
-        case_id=case.case_id,
-        phase=case.phase.value,
-        confidence=case.confidence,
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
         details={"tool_name": tool_name, "success": success, "inputs": inputs},
     ))
 
 
 def record_llm_call(
     log: InMemoryEventLog,
-    case: CaseState,
+    case_id: str,
+    phase: str,
+    confidence: float,
     prompt_tokens: int,
     completion_tokens: int,
     latency_ms: float,
 ) -> None:
     log.record(Event(
         type="llm_call",
-        case_id=case.case_id,
-        phase=case.phase.value,
-        confidence=case.confidence,
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
         details={
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -84,68 +82,31 @@ def record_llm_call(
 
 def record_phase_transition(
     log: InMemoryEventLog,
-    case: CaseState,
+    case_id: str,
+    confidence: float,
     from_phase: str,
     to_phase: str,
 ) -> None:
     log.record(Event(
         type="phase_transition",
-        case_id=case.case_id,
+        case_id=case_id,
         phase=to_phase,
-        confidence=case.confidence,
+        confidence=confidence,
         details={"from_phase": from_phase, "to_phase": to_phase},
     ))
 
 
 def record_escalation(
     log: InMemoryEventLog,
-    case: CaseState,
+    case_id: str,
+    phase: str,
+    confidence: float,
     reason: str,
 ) -> None:
     log.record(Event(
         type="escalation",
-        case_id=case.case_id,
-        phase=case.phase.value,
-        confidence=case.confidence,
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
         details={"reason": reason},
     ))
-
-
-# ── fire-and-forget logging (kept for backward compatibility) ─────────────────
-
-def log_turn(case: CaseState) -> None:
-    logger.info(json.dumps({
-        "event": "turn",
-        "case_id": case.case_id,
-        "phase": case.phase.value,
-        "confidence": case.confidence,
-        "tool_calls_total": case.tool_calls_total,
-        "tool_calls_current": case.tool_calls_current_investigation,
-        "budget_mode": case.budget_mode.value,
-        "missing_info": case.missing_info,
-    }))
-
-
-def log_case_closed(case: CaseState, settings: Settings | None = None) -> None:
-    s = settings or Settings()
-    logger.info(json.dumps({
-        "event": "case_closed",
-        "case_id": case.case_id,
-        "phase": case.phase.value,
-        "escalated": bool(case.escalation_context),
-        "tool_calls_total": case.tool_calls_total,
-        "resolution_attempts": case.resolution_attempts,
-        "final_confidence": case.confidence,
-        "llm_calls": case.llm_calls,
-        "prompt_tokens": case.prompt_tokens,
-        "completion_tokens": case.completion_tokens,
-        "llm_latency_ms": round(case.llm_latency_ms, 2),
-        "estimated_cost_usd": estimate_cost_usd(
-            case.prompt_tokens,
-            case.completion_tokens,
-            s.llm_prompt_cost_per_1k,
-            s.llm_completion_cost_per_1k,
-        ),
-        "facts": case.facts,
-        "escalation_context": case.escalation_context,
-    }))

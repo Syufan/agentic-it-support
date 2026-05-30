@@ -51,7 +51,7 @@ def run_turn(
     case.conversation.append({"role": "user", "content": user_message})
 
     if event_log:
-        record_turn_start(event_log, case)
+        record_turn_start(event_log, case.case_id, case.phase.value, case.confidence)
 
     if needs_issue_description(case, user_message):
         return _ask_for_issue_description(case, event_log)
@@ -129,7 +129,7 @@ def run_turn(
             if event_log:
                 last_trace = case.tool_traces[-1]
                 record_tool_call(
-                    event_log, case,
+                    event_log, case.case_id, case.phase.value, case.confidence,
                     tool_name=last_trace.tool_name,
                     success=last_trace.success,
                     inputs=last_trace.inputs,
@@ -137,7 +137,7 @@ def run_turn(
             prev_phase = case.phase
             case.phase = Phase.INVESTIGATING
             if event_log and case.phase != prev_phase:
-                record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
+                record_phase_transition(event_log, case.case_id, case.confidence, prev_phase.value, case.phase.value)
             continue
 
         prev_phase = case.phase
@@ -152,11 +152,11 @@ def run_turn(
             # transition rules close the case (T14), not back to investigating
             case.phase = Phase.ESCALATING
             if event_log:
-                record_escalation(event_log, case, proposal.escalation_reason or "")
+                record_escalation(event_log, case.case_id, case.phase.value, case.confidence, proposal.escalation_reason or "")
 
         _apply_transition(case, evaluate_transition(case))
         if event_log and case.phase != prev_phase:
-            record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
+            record_phase_transition(event_log, case.case_id, case.confidence, prev_phase.value, case.phase.value)
 
         if case.phase == Phase.ESCALATING and not case.handoff_completed:
             return _complete_runtime_handoff(
@@ -203,7 +203,7 @@ def _ask_for_issue_description(
     case.missing_info = ["issue description"]
     case.clarification_attempts += 1
     if event_log:
-        record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
+        record_phase_transition(event_log, case.case_id, case.confidence, previous_phase.value, case.phase.value)
 
     message = (
         "What IT issue are you running into? "
@@ -237,9 +237,9 @@ def _complete_runtime_handoff(
     previous_phase = case.phase
     _apply_transition(case, evaluate_transition(case))
     if event_log:
-        record_escalation(event_log, case, reason)
+        record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
         if case.phase != previous_phase:
-            record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
+            record_phase_transition(event_log, case.case_id, case.confidence, previous_phase.value, case.phase.value)
 
     msg = (
         "I wasn't able to fully resolve this issue. "
@@ -275,13 +275,9 @@ def _record_llm_stats(
     stats = getattr(llm, "last_stats", None)
     if stats is None:
         return
-    case.llm_calls += 1
-    case.prompt_tokens += stats.prompt_tokens
-    case.completion_tokens += stats.completion_tokens
-    case.llm_latency_ms += stats.latency_ms
     if event_log:
         record_llm_call(
-            event_log, case,
+            event_log, case.case_id, case.phase.value, case.confidence,
             prompt_tokens=stats.prompt_tokens,
             completion_tokens=stats.completion_tokens,
             latency_ms=stats.latency_ms,

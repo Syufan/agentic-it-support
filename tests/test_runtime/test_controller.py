@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
+from observability.logger import InMemoryEventLog
 from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, MissingInfoSource, Phase
@@ -708,18 +709,21 @@ class _StatLLM(BaseLLMClient):
         return self._q.popleft()
 
 
-def test_run_turn_accumulates_llm_token_usage():
+def test_run_turn_records_llm_token_usage_to_event_log():
     case = CaseState()
-    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
-    assert case.llm_calls == 1
-    assert case.prompt_tokens == 100
-    assert case.completion_tokens == 20
+    log = InMemoryEventLog()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {}, event_log=log)
+    llm_events = log.of_type("llm_call")
+    assert len(llm_events) == 1
+    assert llm_events[0].details["prompt_tokens"] == 100
+    assert llm_events[0].details["completion_tokens"] == 20
 
 
-def test_run_turn_accumulates_latency():
+def test_run_turn_records_llm_latency_to_event_log():
     case = CaseState()
-    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
-    assert case.llm_latency_ms >= 5.0
+    log = InMemoryEventLog()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {}, event_log=log)
+    assert log.of_type("llm_call")[0].details["latency_ms"] >= 5.0
 
 
 # ── LLMClientError handling ───────────────────────────────────────────────────
