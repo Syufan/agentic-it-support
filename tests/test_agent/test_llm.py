@@ -105,7 +105,7 @@ class _FakeOpenAIClient:
 
 
 def test_real_llm_raises_when_api_key_missing():
-    with pytest.raises(LLMConfigurationError, match="LLM_API_KEY"):
+    with pytest.raises(LLMConfigurationError, match="api_key"):
         RealLLMClient(response_parser=_echo, api_key="")
 
 

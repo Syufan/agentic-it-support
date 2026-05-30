@@ -69,7 +69,7 @@ class RealLLMClient(BaseLLMClient[T]):
         self._model = model
 
         if client is None and not api_key:
-            raise LLMConfigurationError("LLM_API_KEY is not configured")
+            raise LLMConfigurationError("no api_key was injected (settings.llm_api_key is empty)")
 
         self._client = client or OpenAI(api_key=api_key)
 
