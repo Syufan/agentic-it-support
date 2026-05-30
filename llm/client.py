@@ -1,16 +1,18 @@
-import json
 import time
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
-from json import JSONDecodeError
+from typing import Generic, TypeVar
 
 from openai import OpenAI, OpenAIError, PermissionDeniedError
-from pydantic import ValidationError
 
-from agent.proposals import AgentProposal
 from config import LLM_API_KEY, LLM_MODEL
 from runtime.message_builder import LLMInput
+
+#: The parsed domain object a client yields. The transport layer stays agnostic
+#: about its shape; callers bind it (e.g. to AgentProposal) via response_parser.
+T = TypeVar("T")
 
 
 @dataclass
@@ -21,27 +23,27 @@ class LLMCallStats:
     latency_ms: float = 0.0
 
 
-class BaseLLMClient(ABC):
+class BaseLLMClient(ABC, Generic[T]):
     #: stats from the most recent call, or None if this client never tracks them
     last_stats: LLMCallStats | None = None
 
     @abstractmethod
-    def call(self, llm_input: LLMInput) -> AgentProposal:
+    def call(self, llm_input: LLMInput) -> T:
         ...
 
 
-class MockLLMClient(BaseLLMClient):
-    def __init__(self, proposals: list[AgentProposal]) -> None:
-        self._queue: deque[AgentProposal] = deque(proposals)
+class MockLLMClient(BaseLLMClient[T]):
+    def __init__(self, responses: list[T]) -> None:
+        self._queue: deque[T] = deque(responses)
 
-    def call(self, llm_input: LLMInput) -> AgentProposal:
+    def call(self, llm_input: LLMInput) -> T:
         if not self._queue:
-            raise RuntimeError("MockLLMClient: proposal queue is empty")
+            raise RuntimeError("MockLLMClient: response queue is empty")
         return self._queue.popleft()
 
 
 class LLMClientError(RuntimeError):
-    """Raised when the real LLM provider cannot produce a valid proposal."""
+    """Raised when the real LLM provider cannot produce a valid response."""
 
 
 class LLMConfigurationError(LLMClientError):
@@ -56,13 +58,15 @@ class LLMResponseError(LLMClientError):
     pass
 
 
-class RealLLMClient(BaseLLMClient):
+class RealLLMClient(BaseLLMClient[T]):
     def __init__(
         self,
+        response_parser: Callable[[str], T],
         api_key: str | None = None,
         model: str | None = None,
         client: OpenAI | None = None,
     ) -> None:
+        self._parse = response_parser
         self._model = model or LLM_MODEL
         resolved_api_key = api_key if api_key is not None else LLM_API_KEY
 
@@ -71,7 +75,7 @@ class RealLLMClient(BaseLLMClient):
 
         self._client = client or OpenAI(api_key=resolved_api_key)
 
-    def call(self, llm_input: LLMInput) -> AgentProposal:
+    def call(self, llm_input: LLMInput) -> T:
         started = time.perf_counter()
         try:
             response = self._client.chat.completions.create(
@@ -92,12 +96,7 @@ class RealLLMClient(BaseLLMClient):
         if not response.choices:
             raise LLMResponseError("LLM returned no choices")
         raw = response.choices[0].message.content or "{}"
-        try:
-            return AgentProposal.model_validate(json.loads(raw))
-        except JSONDecodeError as exc:
-            raise LLMResponseError("LLM returned non-JSON content") from exc
-        except ValidationError as exc:
-            raise LLMResponseError("LLM returned JSON that does not match AgentProposal") from exc
+        return self._parse(raw)
 
 
 def _stats_from(response, latency_ms: float) -> LLMCallStats:

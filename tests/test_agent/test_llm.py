@@ -23,6 +23,11 @@ def _llm_input() -> LLMInput:
     return LLMInput(system="test system", messages=[{"role": "user", "content": "hello"}])
 
 
+def _echo(raw: str) -> str:
+    """Trivial transport-level parser: keeps these tests domain-agnostic."""
+    return raw
+
+
 # ── BaseLLMClient is abstract ─────────────────────────────────────────────────
 
 def test_base_llm_client_cannot_be_instantiated():
@@ -101,20 +106,30 @@ class _FakeOpenAIClient:
 
 def test_real_llm_raises_when_api_key_missing():
     with pytest.raises(LLMConfigurationError, match="LLM_API_KEY"):
-        RealLLMClient(api_key="")
+        RealLLMClient(response_parser=_echo, api_key="")
 
 
-def test_real_llm_raises_for_non_json_response():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClient("not json"))
+def test_real_llm_delegates_raw_content_to_parser():
+    seen: dict[str, str] = {}
 
-    with pytest.raises(LLMResponseError, match="non-JSON"):
-        client.call(_llm_input())
+    def parser(raw: str) -> str:
+        seen["raw"] = raw
+        return "parsed"
+
+    client = RealLLMClient(response_parser=parser, api_key="", client=_FakeOpenAIClient('{"x": 1}'))
+    result = client.call(_llm_input())
+
+    assert seen["raw"] == '{"x": 1}'
+    assert result == "parsed"
 
 
-def test_real_llm_raises_for_invalid_proposal_json():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClient('{"ok": true}'))
+def test_real_llm_propagates_parser_error():
+    def parser(raw: str) -> str:
+        raise LLMResponseError("parser said no")
 
-    with pytest.raises(LLMResponseError, match="AgentProposal"):
+    client = RealLLMClient(response_parser=parser, api_key="", client=_FakeOpenAIClient("whatever"))
+
+    with pytest.raises(LLMResponseError, match="parser said no"):
         client.call(_llm_input())
 
 
@@ -132,7 +147,7 @@ class _FakeOpenAIClientNoChoices:
 
 
 def test_real_llm_raises_for_empty_choices():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClientNoChoices())
+    client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientNoChoices())
     with pytest.raises(LLMResponseError, match="no choices"):
         client.call(_llm_input())
 
@@ -164,7 +179,7 @@ class _FakeOpenAIClientWithUsage:
 
 
 def test_real_llm_records_token_usage():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClientWithUsage())
+    client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientWithUsage())
     client.call(_llm_input())
     assert client.last_stats is not None
     assert client.last_stats.prompt_tokens == 120
@@ -172,13 +187,13 @@ def test_real_llm_records_token_usage():
 
 
 def test_real_llm_records_latency():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClientWithUsage())
+    client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientWithUsage())
     client.call(_llm_input())
     assert client.last_stats.latency_ms >= 0.0
 
 
 def test_real_llm_stats_default_zero_without_usage():
-    client = RealLLMClient(api_key="", client=_FakeOpenAIClient(
+    client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClient(
         '{"action": "ask_user", "confidence": 0.6, "reasoning_summary": "x", "message": "hi"}'))
     client.call(_llm_input())
     assert client.last_stats.prompt_tokens == 0

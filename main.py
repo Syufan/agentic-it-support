@@ -1,6 +1,7 @@
 import uvicorn
 
 from llm.client import BaseLLMClient, RealLLMClient
+from agent.parser import parse_proposal
 from api.server import ITSupportWebServer
 from runtime.controller import run_turn
 from state.session import SessionStore
@@ -12,7 +13,7 @@ DEFAULT_PORT = 8000
 
 
 def _build_webserver() -> ITSupportWebServer:
-    llm = RealLLMClient()
+    llm = RealLLMClient(response_parser=parse_proposal)
     tools = DEFAULT_TOOLS
     store = SessionStore()
     turn_runner = run_turn

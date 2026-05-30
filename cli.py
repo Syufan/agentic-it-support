@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 
 from llm.client import BaseLLMClient, RealLLMClient
+from agent.parser import parse_proposal
 from observability.logger import InMemoryEventLog
 from observability.spinner import Spinner
 from runtime.controller import TurnCancelled, run_turn
@@ -223,4 +224,4 @@ def _format_trace(event_log: InMemoryEventLog, limit: int = 8) -> str:
 
 
 if __name__ == "__main__":
-    run_cli_session(CaseState(), RealLLMClient(), _TOOLS)
+    run_cli_session(CaseState(), RealLLMClient(response_parser=parse_proposal), _TOOLS)
