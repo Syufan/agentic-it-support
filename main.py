@@ -2,6 +2,8 @@ import uvicorn
 
 from agent.llm import BaseLLMClient, RealLLMClient
 from api.server import ITSupportWebServer
+from api.types import TurnRunner
+from runtime.controller import run_turn
 from state.session import SessionStore
 from tools import DEFAULT_TOOLS
 from tools.base import BaseTool
@@ -14,13 +16,15 @@ def _build_webserver() -> ITSupportWebServer:
     llm = RealLLMClient()
     tools = DEFAULT_TOOLS
     store = SessionStore()
+    turn_runner = run_turn
 
-    _validate_dependencies(llm=llm, tools=tools, store=store)
+    _validate_dependencies(llm=llm, tools=tools, store=store, turn_runner=turn_runner)
 
     return ITSupportWebServer(
         llm=llm,
         tools=tools,
         store=store,
+        turn_runner=turn_runner,
     )
 
 
@@ -29,6 +33,7 @@ def _validate_dependencies(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     store: SessionStore,
+    turn_runner: TurnRunner,
 ) -> None:
     if not isinstance(llm, BaseLLMClient):
         raise TypeError("llm must implement BaseLLMClient")
@@ -38,6 +43,9 @@ def _validate_dependencies(
 
     if not isinstance(tools, dict) or not tools:
         raise ValueError("tools must be a non-empty dict[str, BaseTool]")
+
+    if not callable(turn_runner):
+        raise TypeError("turn_runner must be callable")
 
     for name, tool in tools.items():
         if not isinstance(name, str) or not name:

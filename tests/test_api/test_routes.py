@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.server import ITSupportWebServer
+from runtime.controller import run_turn
 from state.case_state import MissingInfoSource
 from state.session import SessionStore
 from tools.base import BaseTool, ToolResult
@@ -27,7 +28,12 @@ def client():
     store = SessionStore()
     llm = MockLLMClient([_proposal()])
     tools: dict[str, BaseTool] = {}
-    app = ITSupportWebServer(llm=llm, tools=tools, store=store).get_app()
+    app = ITSupportWebServer(
+        llm=llm,
+        tools=tools,
+        store=store,
+        turn_runner=run_turn,
+    ).get_app()
 
     return TestClient(app)
 
@@ -90,7 +96,12 @@ def test_chat_continues_existing_case(persistent_store):
         _proposal(message="What OS?"),
         _proposal(message="Got it, checking now."),
     ])
-    app = ITSupportWebServer(llm=llm_seq, tools={}, store=persistent_store).get_app()
+    app = ITSupportWebServer(
+        llm=llm_seq,
+        tools={},
+        store=persistent_store,
+        turn_runner=run_turn,
+    ).get_app()
     c = TestClient(app)
     r1 = c.post("/chat", json={"message": "VPN broken"})
     case_id = r1.json()["case_id"]
@@ -102,7 +113,12 @@ def test_chat_continues_existing_case(persistent_store):
 
 def test_chat_unknown_case_id_returns_404(persistent_store):
     llm = MockLLMClient([_proposal()])
-    app = ITSupportWebServer(llm=llm, tools={}, store=persistent_store).get_app()
+    app = ITSupportWebServer(
+        llm=llm,
+        tools={},
+        store=persistent_store,
+        turn_runner=run_turn,
+    ).get_app()
     c = TestClient(app)
     response = c.post("/chat", json={"message": "VPN broken", "case_id": "nonexistent-id"})
     assert response.status_code == 404
@@ -123,7 +139,12 @@ def test_get_case_returns_state_and_handoff(persistent_store):
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
                   escalation_reason="needs admin access", message=None),
     ])
-    app = ITSupportWebServer(llm=llm, tools={}, store=persistent_store).get_app()
+    app = ITSupportWebServer(
+        llm=llm,
+        tools={},
+        store=persistent_store,
+        turn_runner=run_turn,
+    ).get_app()
     c = TestClient(app)
     case_id = c.post("/chat", json={"message": "VPN broken"}).json()["case_id"]
 
@@ -138,7 +159,12 @@ def test_get_case_returns_state_and_handoff(persistent_store):
 
 def test_get_case_escalation_context_null_when_not_escalated(persistent_store):
     llm = MockLLMClient([_proposal()])  # ask_user, no escalation
-    app = ITSupportWebServer(llm=llm, tools={}, store=persistent_store).get_app()
+    app = ITSupportWebServer(
+        llm=llm,
+        tools={},
+        store=persistent_store,
+        turn_runner=run_turn,
+    ).get_app()
     c = TestClient(app)
     case_id = c.post("/chat", json={"message": "VPN broken"}).json()["case_id"]
 
@@ -151,7 +177,12 @@ def test_chat_returns_graceful_message_when_llm_fails_mid_turn(persistent_store)
         def call(self, llm_input):
             raise LLMProviderError("LLM model unavailable")
 
-    app = ITSupportWebServer(llm=FailingLLM(), tools={}, store=persistent_store).get_app()
+    app = ITSupportWebServer(
+        llm=FailingLLM(),
+        tools={},
+        store=persistent_store,
+        turn_runner=run_turn,
+    ).get_app()
     c = TestClient(app)
     response = c.post("/chat", json={"message": "VPN broken"})
 

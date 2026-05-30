@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from agent.llm import BaseLLMClient, LLMClientError
 from api.schemas import CaseView, ChatRequest, ChatResponse
-from runtime.controller import run_turn
+from api.types import TurnRunner
 from state.case_state import Phase
 from state.session import SessionStore
 from tools.base import BaseTool
@@ -13,6 +13,7 @@ def build_router(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     store: SessionStore,
+    turn_runner: TurnRunner,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -32,7 +33,7 @@ def build_router(
             case = store.create()
 
         try:
-            message = run_turn(case, request.message, llm, tools)
+            message = turn_runner(case, request.message, llm, tools)
         except LLMClientError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
