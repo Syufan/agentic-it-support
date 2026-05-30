@@ -10,15 +10,12 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from llm.client import RealLLMClient
 from evaluation import EvaluationResult, evaluate
 from runtime.controller import run_turn
 from state.case_state import CaseState
 from tools import DEFAULT_TOOLS
 
 _SCENARIOS_DIR = Path(__file__).parent / "scenarios"
-_llm = RealLLMClient()
-
 
 @dataclass
 class ScenarioResult:
