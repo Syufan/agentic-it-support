@@ -1,86 +1,62 @@
-from fastapi import Depends, FastAPI, HTTPException
-from functools import lru_cache
+from fastapi import APIRouter, HTTPException
 
-from agent.llm import BaseLLMClient, LLMClientError, RealLLMClient
+from agent.llm import BaseLLMClient, LLMClientError
 from api.schemas import CaseView, ChatRequest, ChatResponse
 from runtime.controller import run_turn
 from state.case_state import Phase
-from state.session import SessionStore, store as _default_store
+from state.session import SessionStore
 from tools.base import BaseTool
-from tools import DEFAULT_TOOLS
-
-app = FastAPI(title="IT Helpdesk Agent")
 
 
-@lru_cache(maxsize=1)
-def _llm_singleton() -> BaseLLMClient:
-    return RealLLMClient()
+def build_router(
+    *,
+    llm: BaseLLMClient,
+    tools: dict[str, BaseTool],
+    store: SessionStore,
+) -> APIRouter:
+    router = APIRouter()
 
+    @router.get("/health")
+    def health() -> dict:
+        return {"status": "ok"}
 
-def get_llm() -> BaseLLMClient:
-    try:
-        return _llm_singleton()
-    except LLMClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    @router.post("/chat", response_model=ChatResponse)
+    def chat(request: ChatRequest) -> ChatResponse:
+        case = None
+        if request.case_id:
+            case = store.get(request.case_id)
+            if case is None:
+                raise HTTPException(status_code=404, detail="case not found")
 
+        if case is None:
+            case = store.create()
 
-def get_tool_registry() -> dict[str, BaseTool]:
-    return DEFAULT_TOOLS
+        try:
+            message = run_turn(case, request.message, llm, tools)
+        except LLMClientError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+        return ChatResponse(
+            case_id=case.case_id,
+            message=message,
+            phase=case.phase.value,
+            is_closed=case.phase == Phase.CLOSED,
+        )
 
-def get_store() -> SessionStore:
-    return _default_store
-
-
-@app.get("/health")
-def health() -> dict:
-    return {"status": "ok"}
-
-
-@app.post("/chat", response_model=ChatResponse)
-def chat(
-    request: ChatRequest,
-    llm: BaseLLMClient = Depends(get_llm),
-    tools: dict[str, BaseTool] = Depends(get_tool_registry),
-    store: SessionStore = Depends(get_store),
-) -> ChatResponse:
-    case = None
-    if request.case_id:
-        case = store.get(request.case_id)
+    @router.get("/case/{case_id}", response_model=CaseView)
+    def get_case(case_id: str) -> CaseView:
+        case = store.get(case_id)
         if case is None:
             raise HTTPException(status_code=404, detail="case not found")
 
-    if case is None:
-        case = store.create()
+        return CaseView(
+            case_id=case.case_id,
+            phase=case.phase.value,
+            is_closed=case.phase == Phase.CLOSED,
+            confidence=case.confidence,
+            tool_calls_total=case.tool_calls_total,
+            facts=case.facts,
+            escalation_context=case.escalation_context or None,
+        )
 
-    try:
-        message = run_turn(case, request.message, llm, tools)
-    except LLMClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    return ChatResponse(
-        case_id=case.case_id,
-        message=message,
-        phase=case.phase.value,
-        is_closed=case.phase == Phase.CLOSED,
-    )
-
-
-@app.get("/case/{case_id}", response_model=CaseView)
-def get_case(
-    case_id: str,
-    store: SessionStore = Depends(get_store),
-) -> CaseView:
-    case = store.get(case_id)
-    if case is None:
-        raise HTTPException(status_code=404, detail="case not found")
-
-    return CaseView(
-        case_id=case.case_id,
-        phase=case.phase.value,
-        is_closed=case.phase == Phase.CLOSED,
-        confidence=case.confidence,
-        tool_calls_total=case.tool_calls_total,
-        facts=case.facts,
-        escalation_context=case.escalation_context or None,
-    )
+    return router
