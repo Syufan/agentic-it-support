@@ -48,10 +48,17 @@ class CaseState:
     tool_calls_current_investigation: int = 0
     tool_calls_total: int = 0
 
+    # Cost & latency accounting
+    llm_calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    llm_latency_ms: float = 0.0
+
     # Confidence & missing info
     confidence: float = 0.0
     missing_info_source: MissingInfoSource = MissingInfoSource.NONE
     missing_info: list[str] = field(default_factory=list)
+    clarification_attempts: int = 0  # consecutive clarifying turns without progress
 
     # Resolution control
     resolution_attempts: int = 0

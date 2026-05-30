@@ -3,11 +3,11 @@ from dataclasses import dataclass
 from agent.proposals import AgentAction, AgentProposal
 from state.case_state import CaseState, Phase
 
-VALID_TOOLS = {"kb_search", "status_api", "user_directory"}
+VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history", "policy_lookup"}
 
 _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
     Phase.INTAKE:        {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
-    Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
+    Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.ESCALATE},
     Phase.INVESTIGATING: {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.RESOLVE, AgentAction.ESCALATE},
     Phase.RESOLVING:     {AgentAction.RESOLVE, AgentAction.ASK_USER},
     Phase.ESCALATING:    {AgentAction.ESCALATE},

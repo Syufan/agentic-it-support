@@ -164,6 +164,17 @@ def test_empty_input_is_skipped():
     assert len(calls) == 1
 
 
+def test_greeting_does_not_close_case():
+    case = CaseState()
+    output = []
+    run_cli_session(case, MockLLMClient([]), {}, reader=_reader_from(["hey"]),
+                    writer=output.append, clear=_no_clear)
+    joined = " ".join(str(o) for o in output).lower()
+    assert "what it issue" in joined
+    assert "case closed" not in joined
+    assert case.phase == Phase.CLARIFYING
+
+
 def test_unknown_command_does_not_call_llm():
     case = CaseState()
     calls = []

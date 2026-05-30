@@ -1,9 +1,18 @@
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, field_validator
 
 
 class ChatRequest(BaseModel):
     message: str
     case_id: str | None = None
+
+    @field_validator("message")
+    @classmethod
+    def _reject_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("message must not be empty")
+        return value
 
 
 class ChatResponse(BaseModel):
@@ -11,3 +20,15 @@ class ChatResponse(BaseModel):
     message: str
     phase: str
     is_closed: bool
+
+
+class CaseView(BaseModel):
+    """Full case snapshot, including the human-handoff package when escalated."""
+
+    case_id: str
+    phase: str
+    is_closed: bool
+    confidence: float
+    tool_calls_total: int
+    facts: dict[str, Any]
+    escalation_context: dict[str, Any] | None

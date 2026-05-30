@@ -64,13 +64,18 @@ def test_clarifying_allows_ask_user_and_call_tool(action, extra):
     result = validate_proposal(case_in(Phase.CLARIFYING), proposal(action=action, **extra))
     assert result.valid is True
 
-@pytest.mark.parametrize("action,extra", [
-    (AgentAction.RESOLVE, {"message": "Try this."}),
-    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
-])
-def test_clarifying_rejects_resolve_and_escalate(action, extra):
-    result = validate_proposal(case_in(Phase.CLARIFYING), proposal(action=action, **extra))
+def test_clarifying_rejects_resolve():
+    # cannot resolve before investigating, but escalate IS allowed from clarifying
+    # so a genuine out-of-scope handoff isn't mangled into a forced escalate
+    result = validate_proposal(case_in(Phase.CLARIFYING),
+                               proposal(action=AgentAction.RESOLVE, message="Try this."))
     assert result.valid is False
+
+
+def test_clarifying_allows_escalate():
+    result = validate_proposal(case_in(Phase.CLARIFYING),
+                               proposal(action=AgentAction.ESCALATE, escalation_reason="needs admin"))
+    assert result.valid is True
 
 
 @pytest.mark.parametrize("action,extra", [

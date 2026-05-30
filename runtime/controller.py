@@ -7,18 +7,40 @@ from config import CONFIDENCE_HIGH
 from observability.logger import (
     InMemoryEventLog,
     record_escalation,
+    record_llm_call,
     record_phase_transition,
     record_tool_call,
     record_turn_start,
 )
 from policy import check as policy_check
+from runtime.calibration import calibrate
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
-from state.case_state import CaseState, Phase, ToolTrace
+from state.case_state import CaseState, MissingInfoSource, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
+_MAX_CORRECTIONS = 3
+_MAX_CLARIFICATION_ATTEMPTS = 3
+_VAGUE_INTAKE_MESSAGES = {
+    "can you help me",
+    "good afternoon",
+    "good morning",
+    "hello",
+    "hello there",
+    "hey",
+    "hey there",
+    "hi",
+    "hi there",
+    "help",
+    "help me",
+    "i need help",
+    "need help",
+    "problem",
+    "issue",
+    "yo",
+}
 
 
 class TurnCancelled(Exception):
@@ -38,32 +60,59 @@ def run_turn(
     if event_log:
         record_turn_start(event_log, case)
 
+    if _needs_issue_description(case, user_message):
+        return _ask_for_issue_description(case, event_log)
+
+    correction: str | None = None
+    corrections = 0
     for _ in range(_MAX_INNER_ITERATIONS):
         if should_cancel and should_cancel():
             raise TurnCancelled()
 
-        llm_input = build_messages(case)
+        llm_input = build_messages(case, correction=correction)
+        correction = None
         try:
             proposal = llm.call(llm_input)
         except LLMClientError:
             return _force_escalate(case, "LLM provider error during investigation")
+
+        _record_llm_stats(case, llm, event_log)
 
         # The provider call is the blocking wait, so re-check here: this is what
         # lets ESC interrupt the common single-call turn before we mutate state.
         if should_cancel and should_cancel():
             raise TurnCancelled()
 
+        # A guardrail violation is correctable: feed the reason back and let the
+        # agent revise on the next iteration (bounded by _MAX_INNER_ITERATIONS),
+        # rather than terminating the case on the first stumble.
         validation = validate_proposal(case, proposal)
         if not validation.valid:
-            return _force_escalate(case, f"invalid LLM response: {validation.reason}")
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(case, f"repeated invalid proposals: {validation.reason}")
+            correction = (
+                f"Your previous response was rejected: {validation.reason}. "
+                "Choose an action that is valid in the current phase and try again."
+            )
+            continue
 
         policy = policy_check(case, proposal)
         if not policy.allowed:
-            return _force_escalate(case, f"policy constraint: {policy.reason}")
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(case, f"repeated policy violations: {policy.reason}")
+            correction = (
+                f"That action is not permitted yet: {policy.reason}. "
+                "Gather more evidence with a tool, ask the user a clarifying "
+                "question, or only escalate once you genuinely cannot proceed."
+            )
+            continue
 
         _project_to_state(case, proposal)
 
         if proposal.action == AgentAction.CALL_TOOL:
+            case.clarification_attempts = 0  # investigating is progress
             _execute_tool(case, proposal, tool_registry)
             if event_log:
                 last_trace = case.tool_traces[-1]
@@ -79,25 +128,82 @@ def run_turn(
                 record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
             continue
 
+        prev_phase = case.phase
+
         if proposal.action == AgentAction.RESOLVE:
             case.resolution_attempts += 1
 
         if proposal.action == AgentAction.ESCALATE:
             _build_escalation_context(case, proposal.escalation_reason, proposal.confidence)
             case.handoff_completed = True
+            # a completed handoff is terminal from any phase: go to ESCALATING so the
+            # transition rules close the case (T14), not back to investigating
+            case.phase = Phase.ESCALATING
             if event_log:
                 record_escalation(event_log, case, proposal.escalation_reason or "")
 
-        prev_phase = case.phase
         _apply_transition(case, evaluate_transition(case))
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
-        response = _format_response(proposal)
+        # Bound the pre-investigation clarifying loop: if we keep asking the user
+        # for a usable problem description and get nowhere, stop re-asking forever.
+        if proposal.action == AgentAction.ASK_USER and _stuck_clarifying(case):
+            case.clarification_attempts += 1
+            if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
+                # No usable issue was ever described — there is nothing to diagnose
+                # or hand off, so soft-close rather than escalate to a specialist.
+                return _soft_close(case)
+        else:
+            case.clarification_attempts = 0
+
+        response = _format_response(proposal, case.confidence)
         case.conversation.append({"role": "assistant", "content": response})
         return response
 
     return _force_escalate(case, "maximum investigation steps reached without resolution")
+
+
+def _stuck_clarifying(case: CaseState) -> bool:
+    """True while we are still trying to get a usable problem statement: pre-
+    investigation (no tool has run) and not yet past the clarifying phases."""
+    return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
+
+
+def _needs_issue_description(case: CaseState, user_message: str) -> bool:
+    if case.phase != Phase.INTAKE:
+        return False
+    if case.tool_calls_total > 0:
+        return False
+    if len(case.conversation) != 1:
+        return False
+
+    text = " ".join(user_message.lower().strip().split())
+    text = text.strip(".,!?;:()[]{}\"'")
+    if text in _VAGUE_INTAKE_MESSAGES:
+        return True
+
+    return False
+
+
+def _ask_for_issue_description(
+    case: CaseState,
+    event_log: InMemoryEventLog | None,
+) -> str:
+    previous_phase = case.phase
+    case.phase = Phase.CLARIFYING
+    case.missing_info_source = MissingInfoSource.USER
+    case.missing_info = ["issue description"]
+    case.clarification_attempts += 1
+    if event_log:
+        record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
+
+    message = (
+        "What IT issue are you running into? "
+        "Please include the app or service, what you see, and when it started."
+    )
+    case.conversation.append({"role": "assistant", "content": message})
+    return message
 
 
 def _force_escalate(case: CaseState, reason: str) -> str:
@@ -114,8 +220,46 @@ def _force_escalate(case: CaseState, reason: str) -> str:
     return msg
 
 
+def _soft_close(case: CaseState) -> str:
+    """Close a case that never produced a usable issue description.
+
+    Distinct from escalation: there is no problem to diagnose and nothing to hand
+    off, so we do not build an escalation_context or mark a handoff — we just
+    close and invite the user to come back with details.
+    """
+    case.phase = Phase.CLOSED
+    msg = (
+        "I don't have enough information to diagnose an IT issue yet, so I'll close "
+        "this for now. When you're ready, start a new request and include the affected "
+        "app or service, what you're seeing (any error message), and when it started."
+    )
+    case.conversation.append({"role": "assistant", "content": msg})
+    return msg
+
+
+def _record_llm_stats(
+    case: CaseState,
+    llm: BaseLLMClient,
+    event_log: InMemoryEventLog | None,
+) -> None:
+    stats = getattr(llm, "last_stats", None)
+    if stats is None:
+        return
+    case.llm_calls += 1
+    case.prompt_tokens += stats.prompt_tokens
+    case.completion_tokens += stats.completion_tokens
+    case.llm_latency_ms += stats.latency_ms
+    if event_log:
+        record_llm_call(
+            event_log, case,
+            prompt_tokens=stats.prompt_tokens,
+            completion_tokens=stats.completion_tokens,
+            latency_ms=stats.latency_ms,
+        )
+
+
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
-    case.confidence = proposal.confidence
+    case.confidence = calibrate(proposal.confidence, case)
     case.missing_info_source = proposal.missing_info_source
     case.missing_info = list(proposal.missing_info)
     case.has_safe_low_risk_guidance = proposal.has_safe_low_risk_guidance
@@ -194,17 +338,23 @@ def _build_escalation_context(
     }
 
 
-def _format_response(proposal: AgentProposal) -> str:
+def _format_response(proposal: AgentProposal, confidence: float) -> str:
     if proposal.action == AgentAction.ESCALATE:
-        return (
-            "I wasn't able to fully resolve this issue. "
+        handoff = (
             "I'm connecting you with an IT specialist who will have all the context — "
             "you won't need to repeat yourself."
         )
+        reason = (proposal.escalation_reason or "").strip()
+        if reason:
+            # tell the employee why, so the handoff isn't a black box
+            return f"{reason} {handoff}"
+        return f"I wasn't able to fully resolve this issue. {handoff}"
 
     if proposal.action == AgentAction.RESOLVE:
         message = proposal.message or ""
-        if proposal.confidence >= CONFIDENCE_HIGH:
+        # use the runtime's calibrated confidence so the wording the employee
+        # sees matches the confidence the runtime actually acted on
+        if confidence >= CONFIDENCE_HIGH:
             return f"I found a likely fix for your issue: {message}"
         return f"I'm not fully certain, but this is a safe first step to try: {message}"
 

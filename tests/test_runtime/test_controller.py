@@ -59,6 +59,90 @@ def test_ask_user_returns_message():
     assert response == "What OS?"
 
 
+def test_vague_initial_greeting_asks_for_issue_without_llm():
+    case = CaseState()
+    response = run_turn(case, "hey", MockLLMClient([]), {})
+    assert "what it issue" in response.lower()
+    assert case.phase == Phase.CLARIFYING
+    assert case.missing_info == ["issue description"]
+    assert case.tool_calls_total == 0
+
+
+def test_vague_initial_greeting_with_punctuation_is_caught():
+    response = run_turn(CaseState(), "hey!", MockLLMClient([]), {})
+    assert "what it issue" in response.lower()
+
+
+def test_short_known_issue_still_goes_to_llm():
+    case = CaseState()
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(message="What OS?"),
+    ]), {})
+    assert response == "What OS?"
+
+
+def test_short_symptom_phrase_still_goes_to_llm():
+    case = CaseState()
+    response = run_turn(case, "locked out", MockLLMClient([
+        _proposal(message="Which account are you locked out of?"),
+    ]), {})
+    assert response == "Which account are you locked out of?"
+
+
+# ── clarification loop cap ─────────────────────────────────────────────────────
+
+def _clarify_ask() -> AgentProposal:
+    return _proposal(action=AgentAction.ASK_USER, message="Please describe the issue",
+                     missing_info_source=MissingInfoSource.USER, missing_info=["issue description"])
+
+
+def test_repeated_unproductive_clarifying_soft_closes_without_handoff():
+    # user never provides a usable issue: there is nothing to diagnose or hand off,
+    # so the case should soft-close (no escalation), not be routed to a specialist.
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    llm = MockLLMClient([_clarify_ask() for _ in range(8)])
+    response = ""
+    for _ in range(8):
+        if case.phase == Phase.CLOSED:
+            break
+        response = run_turn(case, "no", llm, {})
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+    assert "enough information" in response.lower()
+    assert "specialist" not in response.lower()
+
+
+def test_a_few_clarifying_turns_do_not_escalate():
+    # asking two or three times is fine — only a persistent dead end escalates
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    llm = MockLLMClient([_clarify_ask(), _clarify_ask()])
+    run_turn(case, "no", llm, {})
+    run_turn(case, "no", llm, {})
+    assert case.phase != Phase.CLOSED
+
+
+def test_tool_call_resets_clarification_attempts():
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.clarification_attempts = 2
+    tools = {"kb_search": MockTool(ToolResult(success=True, data={"hit": 1}))}
+    run_turn(case, "my vpn times out", MockLLMClient([
+        _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                  tool_input={"query": "vpn"}, message=None,
+                  missing_info_source=MissingInfoSource.TOOL),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Switch to TCP"),
+    ]), tools)
+    assert case.clarification_attempts == 0
+
+
+def test_vague_greeting_counts_as_a_clarification_attempt():
+    case = CaseState()
+    run_turn(case, "hey", MockLLMClient([]), {})
+    assert case.clarification_attempts == 1
+
+
 # ── phase transitions ─────────────────────────────────────────────────────────
 
 def test_phase_transitions_to_clarifying_when_missing_user_info():
@@ -81,6 +165,7 @@ def test_phase_transitions_to_investigating_when_no_missing_info():
 
 def test_phase_transitions_to_resolving_after_high_confidence_resolve():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -117,7 +202,7 @@ def test_tool_trace_recorded():
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "VPN"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
@@ -135,7 +220,7 @@ def test_tool_counters_incremented():
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={}))
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
@@ -152,7 +237,7 @@ def test_tool_data_stored_in_facts():
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
@@ -167,7 +252,7 @@ def _failing_proposals() -> list:
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None, missing_info_source=MissingInfoSource.TOOL),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix"),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
 
 def test_failed_tool_trace_has_success_false():
@@ -208,6 +293,7 @@ def test_missing_tool_error_stored_in_facts():
 
 def test_resolve_increments_resolution_attempts():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -223,6 +309,48 @@ def test_escalate_sets_handoff_completed():
                   escalation_reason="Needs admin", message=None),
     ]), {})
     assert case.handoff_completed is True
+
+
+def test_escalate_closes_case_in_one_turn():
+    # a completed handoff is terminal — the case should close, not linger open
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="Needs admin", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_escalate_message_surfaces_reason_to_user():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "x", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="this needs admin rights we cannot grant", message=None),
+    ]), {})
+    assert "this needs admin rights we cannot grant" in response
+
+
+def test_escalate_allowed_and_closes_from_clarifying():
+    # a legitimate (low-confidence) escalation while still clarifying must be a
+    # clean handoff, not mangled into a "repeated invalid proposals" force-escalate
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "shadow rocket is stuck"}]
+    response = run_turn(case, "macOS, just stuck, no error", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="third-party app outside our supported scope", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is True
+    assert "third-party app outside our supported scope" in response
+
+
+def test_forced_escalation_message_stays_generic():
+    # internal force-escalate reasons (e.g. repeated invalid proposals) must not leak
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="x")  # invalid in intake
+    response = run_turn(case, "vpn is down", MockLLMClient([bad] * 6), {})
+    assert "specialist" in response.lower()
+    assert "repeated" not in response.lower()
 
 
 def _escalate_proposal() -> AgentProposal:
@@ -286,6 +414,7 @@ def test_escalation_context_includes_resolution_attempts():
 
 def test_high_confidence_resolve_has_confident_prefix():
     case = _case_after_clarification()
+    case.tool_calls_total = 1  # investigation already happened
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client."),
     ]), {})
@@ -294,11 +423,25 @@ def test_high_confidence_resolve_has_confident_prefix():
 
 def test_medium_confidence_resolve_has_hedging_prefix():
     case = CaseState(phase=Phase.INVESTIGATING)
+    case.tool_calls_total = 1  # investigation already happened
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try restarting."),
     ]), {})
     assert "not fully certain" in response.lower() or "safe" in response.lower()
     assert "Try restarting" in response
+
+def test_resolve_prefix_reflects_calibrated_not_raw_confidence():
+    # raw confidence is high (0.9) but a prior failed attempt calibrates it down,
+    # so the employee sees the hedged wording; confidence shown matches the
+    # confidence the runtime actually acted on.
+    case = _case_after_clarification()
+    case.tool_calls_total = 2
+    case.resolution_attempts = 1  # one prior fix did not stick -> -0.15
+    response = run_turn(case, "still broken", MockLLMClient([
+        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Reinstall the client."),
+    ]), {})
+    assert "not fully certain" in response.lower() or "safe" in response.lower()
+
 
 def test_ask_user_message_passes_through_unchanged():
     case = CaseState()
@@ -321,6 +464,7 @@ def test_escalate_response_is_handoff_message():
 
 def test_confidence_updated_from_proposal():
     case = _case_after_clarification()
+    case.tool_calls_total = 2  # investigation already happened
     run_turn(case, "msg", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.95, message="Fix"),
     ]), {})
@@ -334,6 +478,35 @@ def test_missing_info_projected_from_proposal():
         missing_info=["OS", "VPN version"],
     )]), {})
     assert case.missing_info == ["OS", "VPN version"]
+
+
+# ── cost / latency accounting ─────────────────────────────────────────────────
+
+class _StatLLM(BaseLLMClient):
+    def __init__(self, proposals):
+        from collections import deque
+        self._q = deque(proposals)
+        self.last_stats = None
+
+    def call(self, llm_input):
+        from agent.llm import LLMCallStats
+        self.last_stats = LLMCallStats(prompt_tokens=100, completion_tokens=20,
+                                       total_tokens=120, latency_ms=5.0)
+        return self._q.popleft()
+
+
+def test_run_turn_accumulates_llm_token_usage():
+    case = CaseState()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
+    assert case.llm_calls == 1
+    assert case.prompt_tokens == 100
+    assert case.completion_tokens == 20
+
+
+def test_run_turn_accumulates_latency():
+    case = CaseState()
+    run_turn(case, "VPN broken", _StatLLM([_proposal(message="What OS?")]), {})
+    assert case.llm_latency_ms >= 5.0
 
 
 # ── LLMClientError handling ───────────────────────────────────────────────────
@@ -378,7 +551,7 @@ def test_cancel_before_first_iteration_does_not_call_llm():
     with pytest.raises(TurnCancelled):
         run_turn(case, "VPN broken", llm, {}, should_cancel=lambda: True)
     # proposal was never consumed
-    assert run_turn(CaseState(), "again", llm, {}) == "What OS?"
+    assert run_turn(CaseState(), "VPN broken", llm, {}) == "What OS?"
 
 
 def test_cancel_before_first_iteration_leaves_phase_unchanged():
@@ -427,66 +600,76 @@ def test_llm_error_builds_escalation_context():
     assert "escalation_reason" in case.escalation_context
 
 
-# ── policy block ──────────────────────────────────────────────────────────────
+# ── guardrail violations are correctable (retry, not instant escalation) ───────
 
-def test_policy_block_closes_case():
-    # INVESTIGATING, confidence=0.6 >= CONFIDENCE_LOW, budget=0 → premature escalation blocked
+def test_validation_failure_retries_and_recovers():
+    # INTAKE forbids RESOLVE; the agent should be re-prompted and recover with a
+    # valid action rather than being escalated on the first stumble.
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    good = _proposal(action=AgentAction.ASK_USER, message="What OS are you on?")
+    response = run_turn(case, "VPN broken", MockLLMClient([bad, good]), {})
+    assert response == "What OS are you on?"
+    assert case.phase != Phase.CLOSED
+
+
+def test_validation_failure_recovery_does_not_escalate():
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    good = _proposal(action=AgentAction.ASK_USER, message="What OS?")
+    run_turn(case, "VPN broken", MockLLMClient([bad, good]), {})
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+
+
+def test_policy_block_retries_and_recovers():
+    # premature ESCALATE is policy-blocked; agent is re-prompted and recovers
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                  escalation_reason="needs help", message=None),
-    ]), {})
+    blocked = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
+                        escalation_reason="needs help", message=None)
+    good = _proposal(action=AgentAction.ASK_USER, message="Which tool times out?")
+    response = run_turn(case, "VPN broken", MockLLMClient([blocked, good]), {})
+    assert response == "Which tool times out?"
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+
+
+def test_zero_tool_resolve_is_corrected_then_grounded():
+    # RESOLVE with no tool calls is blocked; agent recovers by calling a tool,
+    # then resolves successfully once grounded.
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    premature = _proposal(action=AgentAction.RESOLVE, confidence=0.7,
+                          message="Just reinstall it")
+    do_tool = _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
+                        tool_name="kb_search", tool_input={"query": "vpn"}, message=None,
+                        missing_info_source=MissingInfoSource.TOOL)
+    resolve = _proposal(action=AgentAction.RESOLVE, confidence=0.7,
+                        message="Switch the VPN protocol to TCP")
+    tools = {"kb_search": MockTool(ToolResult(success=True, data={"hits": ["use TCP"]}))}
+    response = run_turn(case, "VPN broken", MockLLMClient([premature, do_tool, resolve]), tools)
+    assert "Switch the VPN protocol to TCP" in response
+    assert case.tool_calls_total >= 1
+    assert case.handoff_completed is False
+
+
+def test_persistent_guardrail_violation_eventually_escalates():
+    # an agent that never produces a valid action falls back to a graceful
+    # escalation rather than looping forever.
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
+    run_turn(case, "VPN broken", MockLLMClient([bad] * 12), {})
     assert case.phase == Phase.CLOSED
-
-
-def test_policy_block_sets_handoff_completed():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                  escalation_reason="needs help", message=None),
-    ]), {})
     assert case.handoff_completed is True
-
-
-def test_policy_block_builds_escalation_context():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                  escalation_reason="needs help", message=None),
-    ]), {})
-    assert case.escalation_context != {}
     assert "escalation_reason" in case.escalation_context
 
 
-def test_policy_block_returns_specialist_message():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    response = run_turn(case, "VPN broken", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                  escalation_reason="needs help", message=None),
-    ]), {})
-    assert "specialist" in response.lower()
-
-
-# ── validate_proposal failure ─────────────────────────────────────────────────
-
-def test_validate_failure_closes_case():
-    # INTAKE phase: RESOLVE is not an allowed action → validator rejects
+def test_guardrail_corrections_are_capped_before_loop_exhaustion():
+    # correction retries are bounded well under the inner-iteration limit, so a
+    # misbehaving model cannot burn the whole loop (and its token cost).
     case = CaseState(phase=Phase.INTAKE)
     bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
-    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
+    llm = MockLLMClient([bad] * 12)
+    run_turn(case, "VPN broken", llm, {})
     assert case.phase == Phase.CLOSED
-
-
-def test_validate_failure_sets_handoff_completed():
-    case = CaseState(phase=Phase.INTAKE)
-    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
-    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
-    assert case.handoff_completed is True
-
-
-def test_validate_failure_builds_escalation_context():
-    case = CaseState(phase=Phase.INTAKE)
-    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Fix this")
-    run_turn(case, "VPN broken", MockLLMClient([bad]), {})
-    assert case.escalation_context != {}
-    assert "escalation_reason" in case.escalation_context
+    assert len(llm._queue) > 0  # escalated before consuming all proposals

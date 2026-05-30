@@ -63,6 +63,24 @@ def test_empty_conversation_still_produces_messages():
     assert len(result.messages) >= 1
 
 
+# ── correction feedback ───────────────────────────────────────────────────────
+
+def test_correction_is_included_in_messages():
+    case = CaseState()
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    result = build_messages(case, correction="resolve blocked: investigate first")
+    full_text = " ".join(m["content"] for m in result.messages)
+    assert "resolve blocked: investigate first" in full_text
+
+
+def test_no_correction_section_by_default():
+    case = CaseState()
+    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    result = build_messages(case)
+    full_text = " ".join(m["content"] for m in result.messages)
+    assert "Correction" not in full_text
+
+
 # ── case state in observation ─────────────────────────────────────────────────
 
 def test_observation_includes_phase():
