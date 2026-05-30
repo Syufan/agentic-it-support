@@ -124,6 +124,45 @@ def test_a_few_clarifying_turns_do_not_escalate():
     assert case.phase != Phase.CLOSED
 
 
+def test_actionable_unknown_app_issue_forces_tool_investigation():
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    case.clarification_attempts = 1
+    repeated_question = _proposal(
+        action=AgentAction.ASK_USER,
+        message="Any error message?",
+        missing_info_source=MissingInfoSource.USER,
+        missing_info=["error message"],
+    )
+    tool_call = _proposal(
+        action=AgentAction.CALL_TOOL,
+        confidence=0.6,
+        tool_name="kb_search",
+        tool_input={"query": "shadowect vpn website stuck macos"},
+        message=None,
+        missing_info_source=MissingInfoSource.TOOL,
+    )
+    resolve = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.7,
+        message="Check the VPN profile and try a different network.",
+        has_safe_low_risk_guidance=True,
+    )
+    tools = {"kb_search": MockTool(ToolResult(success=True, data={"results": ["vpn guide"]}))}
+
+    response = run_turn(
+        case,
+        "my shadowect app is stuck, vpn is connected, and websites will not load on macos right now",
+        MockLLMClient([repeated_question, tool_call, resolve]),
+        tools,
+    )
+
+    assert "Check the VPN profile" in response
+    assert case.tool_calls_total == 1
+    assert case.phase != Phase.CLOSED
+    assert case.escalation_context == {}
+
+
 def test_tool_call_resets_clarification_attempts():
     case = CaseState(phase=Phase.CLARIFYING)
     case.clarification_attempts = 2

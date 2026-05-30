@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
+import re
 
 from agent.llm import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
@@ -40,6 +41,30 @@ _VAGUE_INTAKE_MESSAGES = {
     "problem",
     "issue",
     "yo",
+}
+
+_ISSUE_SYMPTOMS = {
+    "broken",
+    "can't",
+    "cant",
+    "cannot",
+    "crash",
+    "disconnect",
+    "doesn't work",
+    "doesnt work",
+    "error",
+    "fail",
+    "failing",
+    "freeze",
+    "frozen",
+    "hang",
+    "hanging",
+    "locked",
+    "not working",
+    "stuck",
+    "timeout",
+    "timed out",
+    "unable",
 }
 
 
@@ -109,6 +134,26 @@ def run_turn(
             )
             continue
 
+        if (
+            proposal.action == AgentAction.ASK_USER
+            and _stuck_clarifying(case)
+            and case.clarification_attempts >= 1
+            and _has_usable_issue_description(case)
+        ):
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(
+                    case,
+                    "actionable issue was described but the agent did not start tool investigation",
+                )
+            correction = (
+                "The employee has already described an actionable issue. "
+                "Do not ask for more pre-tool clarification. Call a tool now, "
+                "prefer `kb_search` or `resolution_history` using the app/service "
+                "and symptom from the conversation."
+            )
+            continue
+
         _project_to_state(case, proposal)
 
         if proposal.action == AgentAction.CALL_TOOL:
@@ -148,7 +193,11 @@ def run_turn(
 
         # Bound the pre-investigation clarifying loop: if we keep asking the user
         # for a usable problem description and get nowhere, stop re-asking forever.
-        if proposal.action == AgentAction.ASK_USER and _stuck_clarifying(case):
+        if (
+            proposal.action == AgentAction.ASK_USER
+            and _stuck_clarifying(case)
+            and not _has_usable_issue_description(case)
+        ):
             case.clarification_attempts += 1
             if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
                 # No usable issue was ever described — there is nothing to diagnose
@@ -168,6 +217,52 @@ def _stuck_clarifying(case: CaseState) -> bool:
     """True while we are still trying to get a usable problem statement: pre-
     investigation (no tool has run) and not yet past the clarifying phases."""
     return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
+
+
+def _has_usable_issue_description(case: CaseState) -> bool:
+    """Heuristic gate for "we can investigate now".
+
+    This intentionally does not require a known corporate app. Unknown apps and
+    consumer-network symptoms can still be investigated through KB/history; they
+    should not be soft-closed as "no issue".
+    """
+    user_text = " ".join(
+        m["content"].lower()
+        for m in case.conversation
+        if m["role"] == "user"
+    )
+    normalized = " ".join(user_text.split())
+    if not normalized:
+        return False
+
+    if normalized.strip(".,!?;:()[]{}\"'") in _VAGUE_INTAKE_MESSAGES:
+        return False
+
+    has_symptom = any(symptom in normalized for symptom in _ISSUE_SYMPTOMS)
+    has_app_or_service = bool(re.search(
+        r"\b(app|application|vpn|website|site|browser|google|okta|snowflake|grafana|salesforce|shadow\w*)\b",
+        normalized,
+    ))
+    has_context = (
+        len(normalized.split()) >= 12
+        or any(marker in normalized for marker in (
+            "right now",
+            "today",
+            "yesterday",
+            "started",
+            "happening",
+            "connected",
+            "no error",
+            "error message",
+            "mac",
+            "macos",
+            "windows",
+            "website",
+            "google",
+        ))
+    )
+
+    return has_symptom and has_app_or_service and has_context
 
 
 def _needs_issue_description(case: CaseState, user_message: str) -> bool:
