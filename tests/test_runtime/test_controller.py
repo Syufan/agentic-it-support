@@ -786,6 +786,28 @@ def test_policy_block_retries_and_recovers():
     assert case.escalation_context == {}
 
 
+def test_business_policy_block_retries_and_escalates_to_human():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.tool_calls_total = 1
+    blocked = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="I can reset your MFA device now.",
+    )
+    escalate = _proposal(
+        action=AgentAction.ESCALATE,
+        confidence=0.4,
+        escalation_reason="MFA reset requires human approval and identity verification",
+        message=None,
+    )
+    response = run_turn(case, "I lost my MFA device", MockLLMClient([blocked, escalate]), {})
+    assert "specialist" in response.lower()
+    assert case.handoff_completed is True
+    assert case.escalation_context["escalation_reason"] == (
+        "MFA reset requires human approval and identity verification"
+    )
+
+
 def test_pre_tool_low_confidence_escalation_retries_with_tool():
     case = CaseState(phase=Phase.CLARIFYING)
     case.conversation = [{"role": "user", "content": "hey"}]

@@ -2,9 +2,9 @@
 
 An agentic IT helpdesk assistant built with FastAPI and OpenAI. The agent follows a deterministic state machine (intake → clarifying → investigating → resolving → escalating → closed) and uses a budget-controlled tool loop to diagnose and resolve employee IT issues.
 
-## Tools & data sources
+## Tools, data sources, and policy
 
-The agent grounds its reasoning in five mock data sources (under `data/`), each exposed as a tool:
+The agent grounds its reasoning in four mock information sources (under `data/`), each exposed as a tool:
 
 | Tool | Source | Use |
 |------|--------|-----|
@@ -12,10 +12,12 @@ The agent grounds its reasoning in five mock data sources (under `data/`), each 
 | `status_api` | System status (JSON) | Service health and known incidents |
 | `user_directory` | User records (JSON) | Employee dept/role/location/permissions |
 | `resolution_history` | Past tickets (JSON) | How similar issues were resolved before |
-| `policy_lookup` | Policy rules (JSON) | What the agent may do vs. what needs human approval |
 
 The agent is required to ground in at least one tool before proposing a resolution
 (enforced in `policy/`), so it cannot answer common issues from the model's memory alone.
+Business authorization rules live in `data/policies/policies.json`, but they are not exposed
+as an LLM tool. The runtime loads them through `policy/engine.py` and blocks unauthorized
+resolutions before they become user-visible.
 
 ## Setup
 

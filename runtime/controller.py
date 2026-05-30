@@ -12,6 +12,7 @@ from observability.logger import (
     record_tool_call,
     record_turn_start,
 )
+from policy.engine import check_business_policy
 from runtime.calibration import calibrate
 from runtime.diagnosis_policy import (
     check_diagnosis_policy,
@@ -94,6 +95,20 @@ def run_turn(
             correction = diagnosis_policy.correction or (
                 f"Your previous response violated diagnosis policy: {diagnosis_policy.reason}. "
                 "Choose a valid next diagnostic step and try again."
+            )
+            continue
+
+        business_policy = check_business_policy(case, proposal)
+        if not business_policy.allowed:
+            corrections += 1
+            if corrections > _MAX_CORRECTIONS:
+                return _force_escalate(
+                    case,
+                    f"repeated business policy violations: {business_policy.reason}",
+                )
+            correction = business_policy.correction or (
+                f"Your previous response violated business policy: {business_policy.reason}. "
+                "Choose an authorized next step."
             )
             continue
 

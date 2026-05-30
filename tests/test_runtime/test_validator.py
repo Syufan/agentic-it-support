@@ -170,7 +170,7 @@ def test_call_tool_rejected_when_budget_exhausted():
 
 
 @pytest.mark.parametrize("tool_name", [
-    "kb_search", "status_api", "user_directory",
+    "kb_search", "status_api", "user_directory", "resolution_history",
 ])
 def test_call_tool_with_valid_tool_names(tool_name):
     result = validate_proposal(
@@ -178,6 +178,15 @@ def test_call_tool_with_valid_tool_names(tool_name):
         proposal(action=AgentAction.CALL_TOOL, tool_name=tool_name, tool_input={"query": "x"}),
     )
     assert result.valid is True
+
+
+def test_policy_lookup_is_not_llm_callable_tool():
+    result = validate_proposal(
+        case_in(Phase.INVESTIGATING),
+        proposal(action=AgentAction.CALL_TOOL, tool_name="policy_lookup", tool_input={}),
+    )
+    assert result.valid is False
+    assert "unknown tool" in result.reason
 
 def test_resolve_without_message_rejected():
     result = validate_proposal(

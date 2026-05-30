@@ -2,6 +2,7 @@ import pytest
 
 from agent.proposals import AgentAction, AgentProposal
 from policy import check
+from policy.engine import check_business_policy, find_policy_rules, load_policy_rules
 from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
 
 
@@ -170,3 +171,54 @@ def test_call_tool_always_allowed():
     proposal = _proposal(action=AgentAction.CALL_TOOL, confidence=0.5,
                          tool_name="kb_search", tool_input={"query": "vpn"}, message=None)
     assert check(case, proposal).allowed
+
+
+# ── business authorization policy ──────────────────────────────────────────────
+
+def test_business_policy_rules_load_from_policy_data():
+    rules = load_policy_rules()
+    assert any(rule.action == "reset_mfa_device" for rule in rules)
+    assert any(rule.authorization == "human" for rule in rules)
+
+
+def test_business_policy_find_rules_by_query():
+    matches = find_policy_rules("mfa")
+    assert [rule.action for rule in matches] == ["reset_mfa_device"]
+
+
+def test_business_policy_blocks_human_only_resolution():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="I can reset your MFA device now.",
+    )
+    decision = check_business_policy(case, proposal)
+    assert not decision.allowed
+    assert decision.matched_rule is not None
+    assert decision.matched_rule.action == "reset_mfa_device"
+    assert "human approval required" in decision.reason
+
+
+def test_business_policy_blocks_direct_access_grant_without_approval():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="I will grant software access directly.",
+    )
+    decision = check_business_policy(case, proposal)
+    assert not decision.allowed
+    assert decision.matched_rule is not None
+    assert decision.matched_rule.action == "grant_software_access"
+    assert "approval required" in decision.reason
+
+
+def test_business_policy_allows_agent_authorized_guidance():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="Use the self-service password reset flow.",
+    )
+    assert check_business_policy(case, proposal).allowed
