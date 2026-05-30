@@ -2,7 +2,6 @@ import uvicorn
 
 from agent.llm import BaseLLMClient, RealLLMClient
 from api.server import ITSupportWebServer
-from api.types import TurnRunner
 from runtime.controller import run_turn
 from state.session import SessionStore
 from tools import DEFAULT_TOOLS
@@ -33,7 +32,7 @@ def _validate_dependencies(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     store: SessionStore,
-    turn_runner: TurnRunner,
+    turn_runner,
 ) -> None:
     if not isinstance(llm, BaseLLMClient):
         raise TypeError("llm must implement BaseLLMClient")

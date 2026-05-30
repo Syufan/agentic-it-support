@@ -1,8 +1,10 @@
+from collections.abc import Callable
+
 from fastapi import FastAPI
 
 from agent.llm import BaseLLMClient
 from api.routes import build_router
-from api.types import TurnRunner
+from state.case_state import CaseState
 from state.session import SessionStore
 from tools.base import BaseTool
 
@@ -14,7 +16,7 @@ class ITSupportWebServer:
         llm: BaseLLMClient,
         tools: dict[str, BaseTool],
         store: SessionStore,
-        turn_runner: TurnRunner,
+        turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
     ) -> None:
         self._llm = llm
         self._tools = tools

@@ -1,9 +1,10 @@
+from collections.abc import Callable
+
 from fastapi import APIRouter, HTTPException
 
 from agent.llm import BaseLLMClient, LLMClientError
 from api.schemas import CaseView, ChatRequest, ChatResponse
-from api.types import TurnRunner
-from state.case_state import Phase
+from state.case_state import CaseState, Phase
 from state.session import SessionStore
 from tools.base import BaseTool
 
@@ -13,7 +14,7 @@ def build_router(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     store: SessionStore,
-    turn_runner: TurnRunner,
+    turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
 ) -> APIRouter:
     router = APIRouter()
 
