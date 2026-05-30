@@ -7,7 +7,6 @@ from typing import Generic, TypeVar
 
 from openai import OpenAI, OpenAIError, PermissionDeniedError
 
-from config import LLM_API_KEY, LLM_MODEL
 from runtime.message_builder import LLMInput
 
 #: The parsed domain object a client yields. The transport layer stays agnostic
@@ -62,18 +61,17 @@ class RealLLMClient(BaseLLMClient[T]):
     def __init__(
         self,
         response_parser: Callable[[str], T],
-        api_key: str | None = None,
-        model: str | None = None,
+        api_key: str = "",
+        model: str = "",
         client: OpenAI | None = None,
     ) -> None:
         self._parse = response_parser
-        self._model = model or LLM_MODEL
-        resolved_api_key = api_key if api_key is not None else LLM_API_KEY
+        self._model = model
 
-        if client is None and not resolved_api_key:
+        if client is None and not api_key:
             raise LLMConfigurationError("LLM_API_KEY is not configured")
 
-        self._client = client or OpenAI(api_key=resolved_api_key)
+        self._client = client or OpenAI(api_key=api_key)
 
     def call(self, llm_input: LLMInput) -> T:
         started = time.perf_counter()

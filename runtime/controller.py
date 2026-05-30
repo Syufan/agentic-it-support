@@ -1,9 +1,10 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from config.settings import Settings
 from llm.client import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
-from config import CONFIDENCE_HIGH
+from runtime.constants import CONFIDENCE_HIGH
 from observability.logger import (
     InMemoryEventLog,
     record_escalation,
@@ -41,7 +42,12 @@ def run_turn(
     tool_registry: dict[str, BaseTool],
     event_log: InMemoryEventLog | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    settings: Settings | None = None,
 ) -> str:
+    # Deployment config is injected by the composition root; default to env-backed
+    # values so CLI/tests that don't inject still behave identically.
+    retry_penalty = (settings or Settings()).confidence_retry_penalty
+
     case.conversation.append({"role": "user", "content": user_message})
 
     if event_log:
@@ -113,6 +119,7 @@ def run_turn(
             continue
 
         _project_to_state(case, proposal)
+        case.confidence = calibrate(proposal.confidence, case, retry_penalty)
 
         if proposal.action == AgentAction.CALL_TOOL:
             case.clarification_attempts = 0  # investigating is progress
@@ -294,7 +301,6 @@ def _derive_missing_info_source(action: AgentAction) -> MissingInfoSource:
 
 
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
-    case.confidence = calibrate(proposal.confidence, case)
     case.missing_info_source = _derive_missing_info_source(proposal.action)
     case.missing_info = list(proposal.missing_info)
     if proposal.user_confirmed_resolution is not None:

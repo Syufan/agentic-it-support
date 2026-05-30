@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from config import estimate_cost_usd
+from config.settings import Settings
+from observability.cost import estimate_cost_usd
 from state.case_state import CaseState
 
 logger = logging.getLogger("agentic_it_support")
@@ -125,7 +126,8 @@ def log_turn(case: CaseState) -> None:
     }))
 
 
-def log_case_closed(case: CaseState) -> None:
+def log_case_closed(case: CaseState, settings: Settings | None = None) -> None:
+    s = settings or Settings()
     logger.info(json.dumps({
         "event": "case_closed",
         "case_id": case.case_id,
@@ -138,7 +140,12 @@ def log_case_closed(case: CaseState) -> None:
         "prompt_tokens": case.prompt_tokens,
         "completion_tokens": case.completion_tokens,
         "llm_latency_ms": round(case.llm_latency_ms, 2),
-        "estimated_cost_usd": estimate_cost_usd(case.prompt_tokens, case.completion_tokens),
+        "estimated_cost_usd": estimate_cost_usd(
+            case.prompt_tokens,
+            case.completion_tokens,
+            s.llm_prompt_cost_per_1k,
+            s.llm_completion_cost_per_1k,
+        ),
         "facts": case.facts,
         "escalation_context": case.escalation_context,
     }))

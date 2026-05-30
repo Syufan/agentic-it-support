@@ -1,5 +1,8 @@
+from functools import partial
+
 import uvicorn
 
+from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from agent.parser import parse_proposal
 from api.server import ITSupportWebServer
@@ -13,10 +16,15 @@ DEFAULT_PORT = 8000
 
 
 def _build_webserver() -> ITSupportWebServer:
-    llm = RealLLMClient(response_parser=parse_proposal)
+    settings = Settings()
+    llm = RealLLMClient(
+        response_parser=parse_proposal,
+        api_key=settings.llm_api_key,
+        model=settings.llm_model,
+    )
     tools = DEFAULT_TOOLS
     store = SessionStore()
-    turn_runner = run_turn
+    turn_runner = partial(run_turn, settings=settings)
 
     _validate_dependencies(llm=llm, tools=tools, store=store, turn_runner=turn_runner)
 

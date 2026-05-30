@@ -1,0 +1,28 @@
+from config.settings import Settings
+
+_ENV_VARS = (
+    "LLM_API_KEY",
+    "LLM_MODEL",
+    "CONFIDENCE_RETRY_PENALTY",
+    "LLM_PROMPT_COST_PER_1K",
+    "LLM_COMPLETION_COST_PER_1K",
+)
+
+
+def test_defaults(monkeypatch):
+    for var in _ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    s = Settings(_env_file=None)
+    assert s.llm_api_key == ""
+    assert s.llm_model == "gpt-4o-mini-2024-07-18"
+    assert s.confidence_retry_penalty == 0.15
+    assert s.llm_prompt_cost_per_1k == 0.00015
+    assert s.llm_completion_cost_per_1k == 0.0006
+
+
+def test_env_override(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "custom-model")
+    monkeypatch.setenv("CONFIDENCE_RETRY_PENALTY", "0.3")
+    s = Settings(_env_file=None)
+    assert s.llm_model == "custom-model"
+    assert s.confidence_retry_penalty == 0.3

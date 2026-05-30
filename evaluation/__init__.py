@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from config import MAIN_TOOL_BUDGET
+from runtime.constants import MAIN_TOOL_BUDGET
 from state.case_state import CaseState, Phase
 
 

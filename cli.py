@@ -4,6 +4,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from agent.parser import parse_proposal
 from observability.logger import InMemoryEventLog
@@ -224,4 +225,13 @@ def _format_trace(event_log: InMemoryEventLog, limit: int = 8) -> str:
 
 
 if __name__ == "__main__":
-    run_cli_session(CaseState(), RealLLMClient(response_parser=parse_proposal), _TOOLS)
+    _settings = Settings()
+    run_cli_session(
+        CaseState(),
+        RealLLMClient(
+            response_parser=parse_proposal,
+            api_key=_settings.llm_api_key,
+            model=_settings.llm_model,
+        ),
+        _TOOLS,
+    )

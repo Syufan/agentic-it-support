@@ -1,5 +1,11 @@
-from runtime.calibration import calibrate
+from runtime.calibration import calibrate as _calibrate
 from state.case_state import CaseState
+
+# Production calibrate takes the retry penalty injected from Settings; tests
+# default it to the Settings default (0.15) via this wrapper so existing call
+# sites stay unchanged.
+def calibrate(raw, case, retry_penalty=0.15):
+    return _calibrate(raw, case, retry_penalty)
 
 
 def test_passes_through_when_grounded_and_no_prior_attempts():

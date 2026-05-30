@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import re
 
 from agent.proposals import AgentAction, AgentProposal
-from config import CONFIDENCE_HIGH
+from runtime.constants import CONFIDENCE_HIGH
 from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
