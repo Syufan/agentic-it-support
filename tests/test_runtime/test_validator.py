@@ -157,6 +157,18 @@ def test_call_tool_with_invalid_tool_name_rejected():
     )
     assert result.valid is False
 
+
+def test_call_tool_rejected_when_budget_exhausted():
+    case = case_in(Phase.INVESTIGATING)
+    case.tool_calls_current_investigation = 5
+    result = validate_proposal(
+        case,
+        proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
+    )
+    assert result.valid is False
+    assert "budget" in result.reason
+
+
 @pytest.mark.parametrize("tool_name", [
     "kb_search", "status_api", "user_directory",
 ])

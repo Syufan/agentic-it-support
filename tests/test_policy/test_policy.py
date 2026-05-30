@@ -35,8 +35,19 @@ def test_escalate_blocked_when_budget_remains_and_confidence_above_low():
     assert "premature escalation" in decision.reason
 
 
+def test_escalate_blocked_when_budget_remains_even_with_low_confidence():
+    case = _case(tool_calls_total=1, tool_calls_current_investigation=1,
+                 budget_mode=BudgetMode.MAIN)
+    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                         escalation_reason="needs help", message=None)
+    decision = check(case, proposal)
+    assert not decision.allowed
+    assert "premature escalation" in decision.reason
+
+
 def test_escalate_allowed_when_budget_exhausted():
-    case = _case(tool_calls_current_investigation=5, budget_mode=BudgetMode.MAIN)
+    case = _case(tool_calls_total=5, tool_calls_current_investigation=5,
+                 budget_mode=BudgetMode.MAIN)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -51,12 +62,30 @@ def test_escalate_allowed_when_already_in_escalating_phase():
     assert check(case, proposal).allowed
 
 
-def test_escalate_allowed_when_confidence_below_low():
-    case = _case(tool_calls_current_investigation=0, budget_mode=BudgetMode.MAIN)
-    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                         escalation_reason="needs help", message=None)
+def test_escalate_blocked_before_any_tool_for_investigable_issue():
+    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
+                 budget_mode=BudgetMode.MAIN)
+    proposal = _proposal(
+        action=AgentAction.ESCALATE,
+        confidence=0.3,
+        escalation_reason="VPN connection issue requires further investigation",
+        message=None,
+    )
     decision = check(case, proposal)
-    assert decision.allowed
+    assert not decision.allowed
+    assert "policy boundary" in decision.reason
+
+
+def test_escalate_allowed_before_tool_for_direct_handoff_reason():
+    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
+                 budget_mode=BudgetMode.MAIN)
+    proposal = _proposal(
+        action=AgentAction.ESCALATE,
+        confidence=0.3,
+        escalation_reason="third-party app outside our supported scope",
+        message=None,
+    )
+    assert check(case, proposal).allowed
 
 
 # ── zero-effort resolve guard ─────────────────────────────────────────────────

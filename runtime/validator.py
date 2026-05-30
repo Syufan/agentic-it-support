@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from agent.proposals import AgentAction, AgentProposal
+from state import budget as budget_
 from state.case_state import CaseState, Phase
 
 VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history", "policy_lookup"}
@@ -35,6 +36,8 @@ def validate_proposal(case: CaseState, proposal: AgentProposal) -> ValidationRes
                 return ValidationResult(False, "call_tool requires tool_name")
             if proposal.tool_name not in VALID_TOOLS:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
+            if budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation):
+                return ValidationResult(False, "tool budget exhausted")
 
         case AgentAction.RESOLVE:
             if not proposal.message:

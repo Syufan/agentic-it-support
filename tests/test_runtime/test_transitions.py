@@ -63,12 +63,26 @@ def test_t4_investigating_to_resolving(confidence):
     assert evaluate_transition(case).next_phase == Phase.RESOLVING
 
 
-# ── T5: investigating → escalating (confidence < 0.5) ────────────────────────
+# ── Low confidence does not directly escalate ─────────────────────────────────
 
 @pytest.mark.parametrize("confidence", [0.0, 0.3, 0.49])
-def test_t5_investigating_to_escalating(confidence):
-    case = investigating(confidence=confidence)
-    assert evaluate_transition(case).next_phase == Phase.ESCALATING
+def test_low_confidence_with_tool_gap_stays_investigating_when_budget_remains(confidence):
+    case = investigating(
+        confidence=confidence,
+        missing_info_source=MissingInfoSource.TOOL,
+        tool_calls_current_investigation=1,
+    )
+    assert evaluate_transition(case).next_phase == Phase.INVESTIGATING
+
+
+@pytest.mark.parametrize("confidence", [0.0, 0.3, 0.49])
+def test_low_confidence_with_user_gap_clarifies_when_budget_remains(confidence):
+    case = investigating(
+        confidence=confidence,
+        missing_info_source=MissingInfoSource.USER,
+        tool_calls_current_investigation=1,
+    )
+    assert evaluate_transition(case).next_phase == Phase.CLARIFYING
 
 
 # ── T6: investigating → investigating (medium, tool source, budget remains) ───
@@ -244,7 +258,7 @@ def test_closed_stays_closed():
 @pytest.mark.parametrize("result_fn", [
     lambda: evaluate_transition(intake(missing_info_source=MissingInfoSource.NONE)),
     lambda: evaluate_transition(investigating(confidence=0.9)),
-    lambda: evaluate_transition(investigating(confidence=0.3)),
+    lambda: evaluate_transition(investigating(confidence=0.3, missing_info_source=MissingInfoSource.TOOL)),
     lambda: evaluate_transition(escalating(handoff_completed=True)),
 ])
 def test_other_transitions_have_no_budget_effects(result_fn):
