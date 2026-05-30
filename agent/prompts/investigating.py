@@ -42,7 +42,7 @@ Respond with a single JSON object and nothing else:
   "has_safe_low_risk_guidance": true | false,
 
   // if action = escalate
-  "escalation_reason": "explanation of why this needs a human specialist",
+  "escalation_reason": "one short, plain sentence the employee can read explaining why this needs a human",
 
   // if action = ask_user
   "message": "the question to ask the employee",

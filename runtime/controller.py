@@ -128,30 +128,32 @@ def run_turn(
                 record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
             continue
 
+        prev_phase = case.phase
+
         if proposal.action == AgentAction.RESOLVE:
             case.resolution_attempts += 1
 
         if proposal.action == AgentAction.ESCALATE:
             _build_escalation_context(case, proposal.escalation_reason, proposal.confidence)
             case.handoff_completed = True
+            # a completed handoff is terminal from any phase: go to ESCALATING so the
+            # transition rules close the case (T14), not back to investigating
+            case.phase = Phase.ESCALATING
             if event_log:
                 record_escalation(event_log, case, proposal.escalation_reason or "")
 
-        prev_phase = case.phase
         _apply_transition(case, evaluate_transition(case))
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
         # Bound the pre-investigation clarifying loop: if we keep asking the user
-        # for a usable problem description and get nowhere, hand off rather than
-        # re-asking forever.
+        # for a usable problem description and get nowhere, stop re-asking forever.
         if proposal.action == AgentAction.ASK_USER and _stuck_clarifying(case):
             case.clarification_attempts += 1
             if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
-                return _force_escalate(
-                    case,
-                    "could not obtain a usable problem description after repeated clarification attempts",
-                )
+                # No usable issue was ever described — there is nothing to diagnose
+                # or hand off, so soft-close rather than escalate to a specialist.
+                return _soft_close(case)
         else:
             case.clarification_attempts = 0
 
@@ -213,6 +215,23 @@ def _force_escalate(case: CaseState, reason: str) -> str:
         "I wasn't able to fully resolve this issue. "
         "I'm connecting you with an IT specialist who will have all the context — "
         "you won't need to repeat yourself."
+    )
+    case.conversation.append({"role": "assistant", "content": msg})
+    return msg
+
+
+def _soft_close(case: CaseState) -> str:
+    """Close a case that never produced a usable issue description.
+
+    Distinct from escalation: there is no problem to diagnose and nothing to hand
+    off, so we do not build an escalation_context or mark a handoff — we just
+    close and invite the user to come back with details.
+    """
+    case.phase = Phase.CLOSED
+    msg = (
+        "I don't have enough information to diagnose an IT issue yet, so I'll close "
+        "this for now. When you're ready, start a new request and include the affected "
+        "app or service, what you're seeing (any error message), and when it started."
     )
     case.conversation.append({"role": "assistant", "content": msg})
     return msg
@@ -321,11 +340,15 @@ def _build_escalation_context(
 
 def _format_response(proposal: AgentProposal, confidence: float) -> str:
     if proposal.action == AgentAction.ESCALATE:
-        return (
-            "I wasn't able to fully resolve this issue. "
+        handoff = (
             "I'm connecting you with an IT specialist who will have all the context — "
             "you won't need to repeat yourself."
         )
+        reason = (proposal.escalation_reason or "").strip()
+        if reason:
+            # tell the employee why, so the handoff isn't a black box
+            return f"{reason} {handoff}"
+        return f"I wasn't able to fully resolve this issue. {handoff}"
 
     if proposal.action == AgentAction.RESOLVE:
         message = proposal.message or ""

@@ -96,18 +96,22 @@ def _clarify_ask() -> AgentProposal:
                      missing_info_source=MissingInfoSource.USER, missing_info=["issue description"])
 
 
-def test_repeated_unproductive_clarifying_escalates():
-    # user never provides a usable issue; the agent must stop re-asking and hand off
+def test_repeated_unproductive_clarifying_soft_closes_without_handoff():
+    # user never provides a usable issue: there is nothing to diagnose or hand off,
+    # so the case should soft-close (no escalation), not be routed to a specialist.
     case = CaseState(phase=Phase.CLARIFYING)
     case.conversation = [{"role": "user", "content": "hey"}]
     llm = MockLLMClient([_clarify_ask() for _ in range(8)])
+    response = ""
     for _ in range(8):
         if case.phase == Phase.CLOSED:
             break
-        run_turn(case, "no", llm, {})
+        response = run_turn(case, "no", llm, {})
     assert case.phase == Phase.CLOSED
-    assert case.handoff_completed is True
-    assert case.escalation_context != {}
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+    assert "enough information" in response.lower()
+    assert "specialist" not in response.lower()
 
 
 def test_a_few_clarifying_turns_do_not_escalate():
@@ -305,6 +309,48 @@ def test_escalate_sets_handoff_completed():
                   escalation_reason="Needs admin", message=None),
     ]), {})
     assert case.handoff_completed is True
+
+
+def test_escalate_closes_case_in_one_turn():
+    # a completed handoff is terminal — the case should close, not linger open
+    case = CaseState(phase=Phase.INVESTIGATING)
+    run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="Needs admin", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+
+
+def test_escalate_message_surfaces_reason_to_user():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    response = run_turn(case, "x", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="this needs admin rights we cannot grant", message=None),
+    ]), {})
+    assert "this needs admin rights we cannot grant" in response
+
+
+def test_escalate_allowed_and_closes_from_clarifying():
+    # a legitimate (low-confidence) escalation while still clarifying must be a
+    # clean handoff, not mangled into a "repeated invalid proposals" force-escalate
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "shadow rocket is stuck"}]
+    response = run_turn(case, "macOS, just stuck, no error", MockLLMClient([
+        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
+                  escalation_reason="third-party app outside our supported scope", message=None),
+    ]), {})
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is True
+    assert "third-party app outside our supported scope" in response
+
+
+def test_forced_escalation_message_stays_generic():
+    # internal force-escalate reasons (e.g. repeated invalid proposals) must not leak
+    case = CaseState(phase=Phase.INTAKE)
+    bad = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="x")  # invalid in intake
+    response = run_turn(case, "vpn is down", MockLLMClient([bad] * 6), {})
+    assert "specialist" in response.lower()
+    assert "repeated" not in response.lower()
 
 
 def _escalate_proposal() -> AgentProposal:

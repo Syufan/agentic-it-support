@@ -7,7 +7,7 @@ VALID_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"
 
 _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
     Phase.INTAKE:        {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
-    Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
+    Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.ESCALATE},
     Phase.INVESTIGATING: {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.RESOLVE, AgentAction.ESCALATE},
     Phase.RESOLVING:     {AgentAction.RESOLVE, AgentAction.ASK_USER},
     Phase.ESCALATING:    {AgentAction.ESCALATE},
