@@ -17,11 +17,29 @@ from runtime.calibration import calibrate
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
-from state.case_state import CaseState, Phase, ToolTrace
+from state.case_state import CaseState, MissingInfoSource, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
 _MAX_CORRECTIONS = 3
+_VAGUE_INTAKE_MESSAGES = {
+    "can you help me",
+    "good afternoon",
+    "good morning",
+    "hello",
+    "hello there",
+    "hey",
+    "hey there",
+    "hi",
+    "hi there",
+    "help",
+    "help me",
+    "i need help",
+    "need help",
+    "problem",
+    "issue",
+    "yo",
+}
 
 
 class TurnCancelled(Exception):
@@ -40,6 +58,9 @@ def run_turn(
 
     if event_log:
         record_turn_start(event_log, case)
+
+    if _needs_issue_description(case, user_message):
+        return _ask_for_issue_description(case, event_log)
 
     correction: str | None = None
     corrections = 0
@@ -124,6 +145,41 @@ def run_turn(
         return response
 
     return _force_escalate(case, "maximum investigation steps reached without resolution")
+
+
+def _needs_issue_description(case: CaseState, user_message: str) -> bool:
+    if case.phase != Phase.INTAKE:
+        return False
+    if case.tool_calls_total > 0:
+        return False
+    if len(case.conversation) != 1:
+        return False
+
+    text = " ".join(user_message.lower().strip().split())
+    text = text.strip(".,!?;:()[]{}\"'")
+    if text in _VAGUE_INTAKE_MESSAGES:
+        return True
+
+    return False
+
+
+def _ask_for_issue_description(
+    case: CaseState,
+    event_log: InMemoryEventLog | None,
+) -> str:
+    previous_phase = case.phase
+    case.phase = Phase.CLARIFYING
+    case.missing_info_source = MissingInfoSource.USER
+    case.missing_info = ["issue description"]
+    if event_log:
+        record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
+
+    message = (
+        "What IT issue are you running into? "
+        "Please include the app or service, what you see, and when it started."
+    )
+    case.conversation.append({"role": "assistant", "content": message})
+    return message
 
 
 def _force_escalate(case: CaseState, reason: str) -> str:

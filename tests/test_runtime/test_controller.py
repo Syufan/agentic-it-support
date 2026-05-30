@@ -59,6 +59,36 @@ def test_ask_user_returns_message():
     assert response == "What OS?"
 
 
+def test_vague_initial_greeting_asks_for_issue_without_llm():
+    case = CaseState()
+    response = run_turn(case, "hey", MockLLMClient([]), {})
+    assert "what it issue" in response.lower()
+    assert case.phase == Phase.CLARIFYING
+    assert case.missing_info == ["issue description"]
+    assert case.tool_calls_total == 0
+
+
+def test_vague_initial_greeting_with_punctuation_is_caught():
+    response = run_turn(CaseState(), "hey!", MockLLMClient([]), {})
+    assert "what it issue" in response.lower()
+
+
+def test_short_known_issue_still_goes_to_llm():
+    case = CaseState()
+    response = run_turn(case, "VPN broken", MockLLMClient([
+        _proposal(message="What OS?"),
+    ]), {})
+    assert response == "What OS?"
+
+
+def test_short_symptom_phrase_still_goes_to_llm():
+    case = CaseState()
+    response = run_turn(case, "locked out", MockLLMClient([
+        _proposal(message="Which account are you locked out of?"),
+    ]), {})
+    assert response == "Which account are you locked out of?"
+
+
 # ── phase transitions ─────────────────────────────────────────────────────────
 
 def test_phase_transitions_to_clarifying_when_missing_user_info():
@@ -425,7 +455,7 @@ def test_cancel_before_first_iteration_does_not_call_llm():
     with pytest.raises(TurnCancelled):
         run_turn(case, "VPN broken", llm, {}, should_cancel=lambda: True)
     # proposal was never consumed
-    assert run_turn(CaseState(), "again", llm, {}) == "What OS?"
+    assert run_turn(CaseState(), "VPN broken", llm, {}) == "What OS?"
 
 
 def test_cancel_before_first_iteration_leaves_phase_unchanged():
