@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,13 +38,15 @@ def run_scenario(path: Path, llm: BaseLLMClient, settings: Settings) -> Scenario
     try:
         for message in scenario["messages"]:
             responses.append(run_turn(case, message, llm, DEFAULT_TOOLS, settings=settings))
-    except Exception as exc:
+    except Exception:
+        # Keep per-scenario isolation, but preserve the full traceback so a real
+        # bug surfaces its stack instead of being flattened to a one-line message.
         return ScenarioResult(
             name=scenario.get("name", path.stem),
             passed=False,
             evaluation=evaluate(case),
             responses=responses,
-            failure_reason=f"exception: {exc}",
+            failure_reason=f"exception:\n{traceback.format_exc()}",
         )
 
     result = evaluate(case)
