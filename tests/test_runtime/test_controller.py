@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from runtime.controller import TurnCancelled, run_turn
+from runtime.controller import TurnCancelled, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, MissingInfoSource, Phase
 from tools.base import BaseTool, ToolResult
@@ -57,6 +57,52 @@ def test_ask_user_returns_message():
     case = CaseState()
     response = run_turn(case, "VPN is broken", MockLLMClient([_proposal(message="What OS?")]), {})
     assert response == "What OS?"
+
+
+# ── runtime-owned flags can no longer be set by the LLM proposal ──────────────
+# has_safe_low_risk_guidance (T9) and new_critical_fact_added (T12) are runtime
+# judgments; projecting a proposal must not clobber what the runtime set.
+
+def test_project_does_not_clobber_safe_guidance_flag():
+    case = CaseState()
+    case.has_safe_low_risk_guidance = True
+    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="try restarting"))
+    assert case.has_safe_low_risk_guidance is True
+
+
+def test_project_does_not_clobber_new_critical_fact_flag():
+    case = CaseState()
+    case.new_critical_fact_added = True
+    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="try restarting"))
+    assert case.new_critical_fact_added is True
+
+
+# ── missing_info_source is derived by the runtime from the action ─────────────
+# The LLM no longer self-reports a source; the runtime infers it from what the
+# proposed action implies about where the next missing information comes from.
+
+def test_missing_info_source_derived_from_call_tool():
+    case = CaseState()
+    _project_to_state(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", message=None))
+    assert case.missing_info_source == MissingInfoSource.TOOL
+
+
+def test_missing_info_source_derived_from_ask_user():
+    case = CaseState()
+    _project_to_state(case, _proposal(action=AgentAction.ASK_USER, message="What OS?"))
+    assert case.missing_info_source == MissingInfoSource.USER
+
+
+def test_missing_info_source_none_for_resolve():
+    case = CaseState()
+    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="Try restarting."))
+    assert case.missing_info_source == MissingInfoSource.NONE
+
+
+def test_missing_info_source_none_for_escalate():
+    case = CaseState()
+    _project_to_state(case, _proposal(action=AgentAction.ESCALATE, message=None, escalation_reason="hardware"))
+    assert case.missing_info_source == MissingInfoSource.NONE
 
 
 def test_vague_initial_greeting_asks_for_issue_without_llm():
@@ -146,7 +192,6 @@ def test_actionable_unknown_app_issue_forces_tool_investigation():
         action=AgentAction.RESOLVE,
         confidence=0.7,
         message="Check the VPN profile and try a different network.",
-        has_safe_low_risk_guidance=True,
     )
     tools = {"kb_search": MockTool(ToolResult(success=True, data={"results": ["vpn guide"]}))}
 
@@ -233,6 +278,12 @@ def test_tool_call_then_resolve_in_one_turn():
     assert "Restart VPN client" in response
 
 
+@pytest.mark.xfail(
+    reason="T9 (safe-guidance-at-budget) temporarily unreachable: has_safe_low_risk_guidance "
+    "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
+    "agent-proposal-degovernance memory.",
+    strict=True,
+)
 def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
     case = CaseState(
         phase=Phase.INVESTIGATING,
@@ -265,6 +316,12 @@ def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
     assert case.escalation_context == {}
 
 
+@pytest.mark.xfail(
+    reason="T9 (safe-guidance-at-budget) temporarily unreachable: has_safe_low_risk_guidance "
+    "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
+    "agent-proposal-degovernance memory.",
+    strict=True,
+)
 def test_budget_exhausted_question_retries_to_resolution():
     case = CaseState(
         phase=Phase.INVESTIGATING,
@@ -315,7 +372,6 @@ def test_service_wide_question_retries_to_status_api():
         action=AgentAction.RESOLVE,
         confidence=0.7,
         message="Salesforce appears degraded. Use the web client later or monitor the status page.",
-        has_safe_low_risk_guidance=True,
     )
     tools = {"status_api": MockTool(ToolResult(success=True, data={"services": []}))}
 
@@ -830,7 +886,6 @@ def test_pre_tool_low_confidence_escalation_retries_with_tool():
         action=AgentAction.RESOLVE,
         confidence=0.7,
         message="Try reconnecting the VPN and switching the protocol or server.",
-        has_safe_low_risk_guidance=True,
     )
     tools = {"kb_search": MockTool(ToolResult(success=True, data={"results": ["vpn guide"]}))}
 

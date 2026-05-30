@@ -28,7 +28,6 @@ Respond with a single JSON object and nothing else:
 
   // if action = ask_user
   "message": "the follow-up question",
-  "missing_info_source": "user",
   "missing_info": ["list", "of", "still-missing", "items"],
 
   // if action = call_tool

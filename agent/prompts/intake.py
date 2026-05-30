@@ -25,7 +25,6 @@ Respond with a single JSON object and nothing else:
 
   // if action = ask_user
   "message": "the question to ask the employee",
-  "missing_info_source": "user",
   "missing_info": ["list", "of", "missing", "items"],
 
   // if action = call_tool

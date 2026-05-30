@@ -279,12 +279,24 @@ def _record_llm_stats(
         )
 
 
+def _derive_missing_info_source(action: AgentAction) -> MissingInfoSource:
+    """Infer where the next missing information comes from, from the action alone.
+
+    The action already encodes who is being asked next, so the runtime derives the
+    source instead of trusting an LLM-reported field: asking the user implies the
+    user holds the missing info; calling a tool implies a tool does.
+    """
+    if action == AgentAction.ASK_USER:
+        return MissingInfoSource.USER
+    if action == AgentAction.CALL_TOOL:
+        return MissingInfoSource.TOOL
+    return MissingInfoSource.NONE
+
+
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
     case.confidence = calibrate(proposal.confidence, case)
-    case.missing_info_source = proposal.missing_info_source
+    case.missing_info_source = _derive_missing_info_source(proposal.action)
     case.missing_info = list(proposal.missing_info)
-    case.has_safe_low_risk_guidance = proposal.has_safe_low_risk_guidance
-    case.new_critical_fact_added = proposal.new_critical_fact_added
     if proposal.user_confirmed_resolution is not None:
         case.user_confirmed_resolution = proposal.user_confirmed_resolution
 

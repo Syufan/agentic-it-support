@@ -3,8 +3,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from state.case_state import MissingInfoSource
-
 
 class AgentAction(str, Enum):
     ASK_USER = "ask_user"
@@ -28,17 +26,15 @@ class AgentProposal(BaseModel):
     # User communication
     message: str | None = None
 
-    # Missing info signals → CaseState.missing_info_source / missing_info
-    missing_info_source: MissingInfoSource = MissingInfoSource.NONE
+    # Missing info description (the runtime derives the *source* from `action`).
     missing_info: list[str] = Field(default_factory=list)
 
     # Tool call
     tool_name: str | None = None
     tool_input: dict[str, Any] = Field(default_factory=dict)
 
-    # Transition flags → CaseState
-    has_safe_low_risk_guidance: bool = False
-    new_critical_fact_added: bool = False
+    # The LLM's reading of the user's reply (the only proposal-carried signal the
+    # runtime still trusts, because interpreting natural language is the model's job).
     user_confirmed_resolution: bool | None = None
 
     # Escalation

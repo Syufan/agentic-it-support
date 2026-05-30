@@ -37,18 +37,15 @@ Respond with a single JSON object and nothing else:
   // if action = call_tool
   "tool_name": "kb_search" | "status_api" | "user_directory" | "resolution_history",
   "tool_input": { "query": "..." },
-  "missing_info_source": "tool",
 
   // if action = resolve
   "message": "step-by-step instructions for the employee",
-  "has_safe_low_risk_guidance": true | false,
 
   // if action = escalate
   "escalation_reason": "one short, plain sentence the employee can read explaining why this needs a human",
 
   // if action = ask_user
   "message": "the question to ask the employee",
-  "missing_info_source": "user",
   "missing_info": ["what", "is", "missing"]
 }
 ```
