@@ -1,6 +1,6 @@
 import uvicorn
 
-from agent.llm import BaseLLMClient, RealLLMClient
+from llm.client import BaseLLMClient, RealLLMClient
 from api.server import ITSupportWebServer
 from runtime.controller import run_turn
 from state.session import SessionStore

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from agent.llm import MockLLMClient
+from llm.client import MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.logger import Event, InMemoryEventLog
 from runtime.controller import run_turn

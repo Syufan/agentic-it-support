@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from fastapi import FastAPI
 
-from agent.llm import BaseLLMClient
+from llm.client import BaseLLMClient
 from api.routes import build_router
 from state.case_state import CaseState
 from state.session import SessionStore

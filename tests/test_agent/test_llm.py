@@ -1,5 +1,5 @@
 import pytest
-from agent.llm import (
+from llm.client import (
     BaseLLMClient,
     LLMConfigurationError,
     LLMResponseError,

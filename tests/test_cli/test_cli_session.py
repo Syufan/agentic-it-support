@@ -1,4 +1,4 @@
-from agent.llm import BaseLLMClient, MockLLMClient
+from llm.client import BaseLLMClient, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from cli import _format_status, run_cli_session, typewrite
 from runtime.controller import TurnCancelled

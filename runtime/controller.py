@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
 
-from agent.llm import BaseLLMClient, LLMClientError
+from llm.client import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
 from config import CONFIDENCE_HIGH
 from observability.logger import (

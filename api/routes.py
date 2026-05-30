@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException
 
-from agent.llm import BaseLLMClient, LLMClientError
+from llm.client import BaseLLMClient, LLMClientError
 from api.schemas import CaseView, ChatRequest, ChatResponse
 from state.case_state import CaseState, Phase
 from state.session import SessionStore

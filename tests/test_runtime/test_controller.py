@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
+from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from runtime.controller import TurnCancelled, run_turn
 from runtime.message_builder import LLMInput
@@ -641,7 +641,7 @@ class _StatLLM(BaseLLMClient):
         self.last_stats = None
 
     def call(self, llm_input):
-        from agent.llm import LLMCallStats
+        from llm.client import LLMCallStats
         self.last_stats = LLMCallStats(prompt_tokens=100, completion_tokens=20,
                                        total_tokens=120, latency_ms=5.0)
         return self._q.popleft()

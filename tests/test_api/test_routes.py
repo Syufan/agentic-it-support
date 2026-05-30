@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.llm import BaseLLMClient, LLMProviderError, MockLLMClient
+from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.server import ITSupportWebServer
 from runtime.controller import run_turn

@@ -4,7 +4,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent.llm import BaseLLMClient, RealLLMClient
+from llm.client import BaseLLMClient, RealLLMClient
 from observability.logger import InMemoryEventLog
 from observability.spinner import Spinner
 from runtime.controller import TurnCancelled, run_turn
