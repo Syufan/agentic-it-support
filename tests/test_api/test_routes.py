@@ -80,6 +80,14 @@ def test_chat_returns_is_closed(client):
     assert response.json()["is_closed"] is False
 
 
+def test_chat_rejects_empty_message(client):
+    assert client.post("/chat", json={"message": ""}).status_code == 422
+
+
+def test_chat_rejects_whitespace_only_message(client):
+    assert client.post("/chat", json={"message": "   "}).status_code == 422
+
+
 # ── case continuity ───────────────────────────────────────────────────────────
 
 def test_chat_continues_existing_case(persistent_store):
