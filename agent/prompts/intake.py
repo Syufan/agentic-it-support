@@ -10,6 +10,8 @@ SYSTEM_PROMPT = """You are an IT support agent. An employee has just described t
 - Even when you also need identifying details from the employee, search the knowledge
   base for the general problem FIRST, then `ask_user` on a later step — do not open with
   a question when a tool could already ground the issue
+- If the message already names a service/app and a symptom, `call_tool` now rather than
+  asking for more detail
 - Only lead with `ask_user` when no tool could make progress without that detail
 
 ## Output format
