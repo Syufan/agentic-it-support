@@ -104,7 +104,9 @@ def run_turn(
             )
             continue
 
-        business_policy = check_business_policy(case, proposal)
+        business_policy = check_business_policy(
+            proposal.action.value, _proposal_text(proposal)
+        )
         if not business_policy.allowed:
             corrections += 1
             if corrections > _MAX_CORRECTIONS:
@@ -284,6 +286,19 @@ def _record_llm_stats(
             completion_tokens=stats.completion_tokens,
             latency_ms=stats.latency_ms,
         )
+
+
+def _proposal_text(proposal: AgentProposal) -> str:
+    """The free-text the business-policy layer matches rules against. Extracted
+    here so policy/ never has to know the AgentProposal shape."""
+    return " ".join(
+        part for part in (
+            proposal.message or "",
+            proposal.reasoning_summary,
+            proposal.escalation_reason or "",
+        )
+        if part
+    )
 
 
 def _derive_missing_info_source(action: AgentAction) -> MissingInfoSource:

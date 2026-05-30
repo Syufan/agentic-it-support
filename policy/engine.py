@@ -2,9 +2,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent.proposals import AgentAction, AgentProposal
-from state.case_state import CaseState
-
 _POLICY_FILE = Path(__file__).parent.parent / "data" / "policies" / "policies.json"
 
 
@@ -48,20 +45,20 @@ def find_policy_rules(query: str, path: Path = _POLICY_FILE) -> list[PolicyRule]
 
 
 def check_business_policy(
-    case: CaseState,
-    proposal: AgentProposal,
+    action: str,
+    text: str,
     rules: list[PolicyRule] | None = None,
 ) -> BusinessPolicyDecision:
-    """Validate business authorization rules before acting on an LLM proposal.
+    """Validate business authorization rules for a proposed action.
 
-    This is runtime-owned governance: the model does not decide whether an action
-    is authorized. It can propose guidance, resolution, or escalation; the runtime
-    checks that proposal against policy before it becomes user-visible.
+    This layer is decoupled from the agent/state layers: the runtime extracts the
+    action and the relevant text from its proposal and passes them in. policy/ only
+    knows PolicyRule/BusinessPolicyDecision and its own data file.
     """
-    if proposal.action != AgentAction.RESOLVE:
+    if action != "resolve":
         return BusinessPolicyDecision(True)
 
-    matched = _match_policy_rule(proposal, rules or load_policy_rules())
+    matched = _match_policy_rule(text, rules or load_policy_rules())
     if matched is None or matched.authorization == "agent":
         return BusinessPolicyDecision(True, matched_rule=matched)
 
@@ -89,20 +86,12 @@ def check_business_policy(
 
 
 def _match_policy_rule(
-    proposal: AgentProposal,
+    text: str,
     rules: list[PolicyRule],
 ) -> PolicyRule | None:
-    text = " ".join(
-        part for part in [
-            proposal.message or "",
-            proposal.reasoning_summary,
-            proposal.escalation_reason or "",
-        ]
-        if part
-    ).lower()
-
+    lowered = text.lower()
     for rule in rules:
-        if _rule_matches_text(rule, text):
+        if _rule_matches_text(rule, lowered):
             return rule
     return None
 

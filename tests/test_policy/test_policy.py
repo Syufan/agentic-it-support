@@ -1,9 +1,24 @@
 import pytest
 
 from agent.proposals import AgentAction, AgentProposal
-from policy import check
-from policy.engine import check_business_policy, find_policy_rules, load_policy_rules
+from policy.engine import check_business_policy as _check_business_policy
+from policy.engine import find_policy_rules, load_policy_rules
+from runtime.diagnosis_policy import check_diagnosis_policy as check
 from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
+
+
+def check_business_policy(case, proposal):
+    """Adapt the decoupled engine signature (action, text) to these proposal-based
+    tests; `case` is unused, mirroring how the runtime extracts the inputs."""
+    text = " ".join(
+        part for part in (
+            proposal.message or "",
+            proposal.reasoning_summary,
+            proposal.escalation_reason or "",
+        )
+        if part
+    )
+    return _check_business_policy(proposal.action.value, text)
 
 
 def _proposal(**kwargs) -> AgentProposal:
@@ -222,3 +237,15 @@ def test_business_policy_allows_agent_authorized_guidance():
         message="Use the self-service password reset flow.",
     )
     assert check_business_policy(case, proposal).allowed
+
+
+# ── decoupled engine contract: (action, text), no proposal/case ───────────────
+
+def test_engine_takes_action_and_text_directly():
+    decision = _check_business_policy("resolve", "I can reset your MFA device now.")
+    assert not decision.allowed
+    assert decision.matched_rule.action == "reset_mfa_device"
+
+
+def test_engine_passes_through_non_resolve_actions():
+    assert _check_business_policy("ask_user", "anything at all").allowed
