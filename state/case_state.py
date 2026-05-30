@@ -58,6 +58,7 @@ class CaseState:
     confidence: float = 0.0
     missing_info_source: MissingInfoSource = MissingInfoSource.NONE
     missing_info: list[str] = field(default_factory=list)
+    clarification_attempts: int = 0  # consecutive clarifying turns without progress
 
     # Resolution control
     resolution_attempts: int = 0

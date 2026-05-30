@@ -22,6 +22,7 @@ from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
 _MAX_CORRECTIONS = 3
+_MAX_CLARIFICATION_ATTEMPTS = 3
 _VAGUE_INTAKE_MESSAGES = {
     "can you help me",
     "good afternoon",
@@ -111,6 +112,7 @@ def run_turn(
         _project_to_state(case, proposal)
 
         if proposal.action == AgentAction.CALL_TOOL:
+            case.clarification_attempts = 0  # investigating is progress
             _execute_tool(case, proposal, tool_registry)
             if event_log:
                 last_trace = case.tool_traces[-1]
@@ -140,11 +142,30 @@ def run_turn(
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
+        # Bound the pre-investigation clarifying loop: if we keep asking the user
+        # for a usable problem description and get nowhere, hand off rather than
+        # re-asking forever.
+        if proposal.action == AgentAction.ASK_USER and _stuck_clarifying(case):
+            case.clarification_attempts += 1
+            if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
+                return _force_escalate(
+                    case,
+                    "could not obtain a usable problem description after repeated clarification attempts",
+                )
+        else:
+            case.clarification_attempts = 0
+
         response = _format_response(proposal, case.confidence)
         case.conversation.append({"role": "assistant", "content": response})
         return response
 
     return _force_escalate(case, "maximum investigation steps reached without resolution")
+
+
+def _stuck_clarifying(case: CaseState) -> bool:
+    """True while we are still trying to get a usable problem statement: pre-
+    investigation (no tool has run) and not yet past the clarifying phases."""
+    return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
 
 
 def _needs_issue_description(case: CaseState, user_message: str) -> bool:
@@ -171,6 +192,7 @@ def _ask_for_issue_description(
     case.phase = Phase.CLARIFYING
     case.missing_info_source = MissingInfoSource.USER
     case.missing_info = ["issue description"]
+    case.clarification_attempts += 1
     if event_log:
         record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
 

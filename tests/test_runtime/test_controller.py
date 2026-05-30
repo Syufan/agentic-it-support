@@ -89,6 +89,56 @@ def test_short_symptom_phrase_still_goes_to_llm():
     assert response == "Which account are you locked out of?"
 
 
+# ── clarification loop cap ─────────────────────────────────────────────────────
+
+def _clarify_ask() -> AgentProposal:
+    return _proposal(action=AgentAction.ASK_USER, message="Please describe the issue",
+                     missing_info_source=MissingInfoSource.USER, missing_info=["issue description"])
+
+
+def test_repeated_unproductive_clarifying_escalates():
+    # user never provides a usable issue; the agent must stop re-asking and hand off
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    llm = MockLLMClient([_clarify_ask() for _ in range(8)])
+    for _ in range(8):
+        if case.phase == Phase.CLOSED:
+            break
+        run_turn(case, "no", llm, {})
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is True
+    assert case.escalation_context != {}
+
+
+def test_a_few_clarifying_turns_do_not_escalate():
+    # asking two or three times is fine — only a persistent dead end escalates
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    llm = MockLLMClient([_clarify_ask(), _clarify_ask()])
+    run_turn(case, "no", llm, {})
+    run_turn(case, "no", llm, {})
+    assert case.phase != Phase.CLOSED
+
+
+def test_tool_call_resets_clarification_attempts():
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.clarification_attempts = 2
+    tools = {"kb_search": MockTool(ToolResult(success=True, data={"hit": 1}))}
+    run_turn(case, "my vpn times out", MockLLMClient([
+        _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                  tool_input={"query": "vpn"}, message=None,
+                  missing_info_source=MissingInfoSource.TOOL),
+        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Switch to TCP"),
+    ]), tools)
+    assert case.clarification_attempts == 0
+
+
+def test_vague_greeting_counts_as_a_clarification_attempt():
+    case = CaseState()
+    run_turn(case, "hey", MockLLMClient([]), {})
+    assert case.clarification_attempts == 1
+
+
 # ── phase transitions ─────────────────────────────────────────────────────────
 
 def test_phase_transitions_to_clarifying_when_missing_user_info():
