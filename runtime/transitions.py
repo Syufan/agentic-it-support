@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from config import CONFIDENCE_HIGH, CONFIDENCE_LOW, MAX_RESOLUTION_ATTEMPTS
+from config import CONFIDENCE_HIGH, MAX_RESOLUTION_ATTEMPTS
 from state import budget as budget_
 from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
 
@@ -48,9 +48,6 @@ def _from_clarifying(case: CaseState) -> TransitionResult:
 def _from_investigating(case: CaseState) -> TransitionResult:
     if case.confidence >= CONFIDENCE_HIGH:
         return _result(Phase.RESOLVING)    # T4
-
-    if case.confidence < CONFIDENCE_LOW:
-        return _result(Phase.ESCALATING)   # T5
 
     budget_done = budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation)
 

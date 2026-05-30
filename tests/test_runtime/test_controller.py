@@ -233,6 +233,98 @@ def test_tool_call_then_resolve_in_one_turn():
     assert "Restart VPN client" in response
 
 
+def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
+    case = CaseState(
+        phase=Phase.INVESTIGATING,
+        confidence=0.6,
+        tool_calls_current_investigation=4,
+        tool_calls_total=4,
+    )
+    proposals = [
+        _proposal(
+            action=AgentAction.CALL_TOOL,
+            confidence=0.6,
+            tool_name="kb_search",
+            tool_input={"query": "shadowrocket connected cannot access google"},
+            message=None,
+            missing_info_source=MissingInfoSource.TOOL,
+        ),
+        _proposal(
+            action=AgentAction.RESOLVE,
+            confidence=0.7,
+            message="Try switching VPN servers, then reconnect and test another external website.",
+            has_safe_low_risk_guidance=True,
+        ),
+    ]
+    tool = MockTool(ToolResult(success=True, data={"results": ["vpn troubleshooting guide"]}))
+
+    response = run_turn(case, "still cannot access google", MockLLMClient(proposals), {"kb_search": tool})
+
+    assert "Try switching VPN servers" in response
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+
+
+def test_budget_exhausted_question_retries_to_resolution():
+    case = CaseState(
+        phase=Phase.INVESTIGATING,
+        confidence=0.6,
+        tool_calls_current_investigation=5,
+        tool_calls_total=5,
+    )
+    ask_again = _proposal(
+        action=AgentAction.ASK_USER,
+        confidence=0.6,
+        message="Can you try reconnecting again?",
+    )
+    resolve = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.6,
+        message="Try switching VPN servers, reconnect, and test another external site.",
+        has_safe_low_risk_guidance=True,
+    )
+
+    response = run_turn(case, "still cannot access google", MockLLMClient([ask_again, resolve]), {})
+
+    assert "Try switching VPN servers" in response
+    assert case.handoff_completed is False
+
+
+def test_service_wide_question_retries_to_status_api():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [
+        {
+            "role": "user",
+            "content": "salesforce is slow since yesterday and my teammates in chicago see the same issue",
+        },
+    ]
+    ask_error = _proposal(
+        action=AgentAction.ASK_USER,
+        confidence=0.5,
+        message="Any error message?",
+    )
+    status_call = _proposal(
+        action=AgentAction.CALL_TOOL,
+        confidence=0.6,
+        tool_name="status_api",
+        tool_input={"service": "Salesforce"},
+        message=None,
+        missing_info_source=MissingInfoSource.TOOL,
+    )
+    resolve = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.7,
+        message="Salesforce appears degraded. Use the web client later or monitor the status page.",
+        has_safe_low_risk_guidance=True,
+    )
+    tools = {"status_api": MockTool(ToolResult(success=True, data={"services": []}))}
+
+    response = run_turn(case, "still slow", MockLLMClient([ask_error, status_call, resolve]), tools)
+
+    assert "Salesforce appears degraded" in response
+    assert case.tool_traces[0].tool_name == "status_api"
+
+
 def test_tool_trace_recorded():
     case = CaseState(phase=Phase.INVESTIGATING)
     case.confidence = 0.6
@@ -447,6 +539,27 @@ def test_escalation_context_includes_resolution_attempts():
     case = CaseState(phase=Phase.INVESTIGATING)
     run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
     assert "resolution_attempts" in case.escalation_context
+
+
+def test_runtime_budget_escalation_builds_handoff_context():
+    case = CaseState(
+        phase=Phase.INVESTIGATING,
+        confidence=0.6,
+        tool_calls_current_investigation=5,
+        tool_calls_total=5,
+        has_safe_low_risk_guidance=False,
+        missing_info_source=MissingInfoSource.NONE,
+    )
+    response = run_turn(case, "still broken", MockLLMClient([
+        _proposal(action=AgentAction.ASK_USER, message="Can you try again?"),
+        _proposal(action=AgentAction.ESCALATE, confidence=0.4,
+                  escalation_reason="investigation budget exhausted", message=None),
+    ]), {})
+
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is True
+    assert case.escalation_context != {}
+    assert "specialist" in response.lower()
 
 
 # ── confidence transparency (P1.7) ───────────────────────────────────────────
@@ -671,6 +784,64 @@ def test_policy_block_retries_and_recovers():
     assert response == "Which tool times out?"
     assert case.handoff_completed is False
     assert case.escalation_context == {}
+
+
+def test_pre_tool_low_confidence_escalation_retries_with_tool():
+    case = CaseState(phase=Phase.CLARIFYING)
+    case.conversation = [{"role": "user", "content": "hey"}]
+    case.clarification_attempts = 1
+    blocked = _proposal(
+        action=AgentAction.ESCALATE,
+        confidence=0.3,
+        escalation_reason="VPN connection issue requires further investigation by a human specialist",
+        message=None,
+    )
+    do_tool = _proposal(
+        action=AgentAction.CALL_TOOL,
+        confidence=0.6,
+        tool_name="kb_search",
+        tool_input={"query": "shadowrocket vpn connected cannot visit google websites"},
+        message=None,
+        missing_info_source=MissingInfoSource.TOOL,
+    )
+    resolve = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.7,
+        message="Try reconnecting the VPN and switching the protocol or server.",
+        has_safe_low_risk_guidance=True,
+    )
+    tools = {"kb_search": MockTool(ToolResult(success=True, data={"results": ["vpn guide"]}))}
+
+    response = run_turn(
+        case,
+        "my shadowrocket is connected but I cant visit google or other outside website",
+        MockLLMClient([blocked, do_tool, resolve]),
+        tools,
+    )
+
+    assert "Try reconnecting" in response
+    assert case.tool_calls_total == 1
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+
+
+def test_direct_handoff_signal_allows_security_escalation():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [
+        {"role": "user", "content": "i clicked a suspicious link and now my account sends weird emails"},
+    ]
+    response = run_turn(case, "still happening", MockLLMClient([
+        _proposal(
+            action=AgentAction.ESCALATE,
+            confidence=0.3,
+            escalation_reason="account may be compromised",
+            message=None,
+        ),
+    ]), {})
+
+    assert case.phase == Phase.CLOSED
+    assert case.handoff_completed is True
+    assert "compromised" in response
 
 
 def test_zero_tool_resolve_is_corrected_then_grounded():

@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from datetime import datetime, timezone
-import re
 
 from agent.llm import BaseLLMClient, LLMClientError
 from agent.proposals import AgentAction, AgentProposal
@@ -13,8 +12,12 @@ from observability.logger import (
     record_tool_call,
     record_turn_start,
 )
-from policy import check as policy_check
 from runtime.calibration import calibrate
+from runtime.diagnosis_policy import (
+    check_diagnosis_policy,
+    has_usable_issue_description,
+    needs_issue_description,
+)
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
@@ -24,48 +27,6 @@ from tools.base import BaseTool, ToolResult
 _MAX_INNER_ITERATIONS = 10
 _MAX_CORRECTIONS = 3
 _MAX_CLARIFICATION_ATTEMPTS = 3
-_VAGUE_INTAKE_MESSAGES = {
-    "can you help me",
-    "good afternoon",
-    "good morning",
-    "hello",
-    "hello there",
-    "hey",
-    "hey there",
-    "hi",
-    "hi there",
-    "help",
-    "help me",
-    "i need help",
-    "need help",
-    "problem",
-    "issue",
-    "yo",
-}
-
-_ISSUE_SYMPTOMS = {
-    "broken",
-    "can't",
-    "cant",
-    "cannot",
-    "crash",
-    "disconnect",
-    "doesn't work",
-    "doesnt work",
-    "error",
-    "fail",
-    "failing",
-    "freeze",
-    "frozen",
-    "hang",
-    "hanging",
-    "locked",
-    "not working",
-    "stuck",
-    "timeout",
-    "timed out",
-    "unable",
-}
 
 
 class TurnCancelled(Exception):
@@ -85,7 +46,7 @@ def run_turn(
     if event_log:
         record_turn_start(event_log, case)
 
-    if _needs_issue_description(case, user_message):
+    if needs_issue_description(case, user_message):
         return _ask_for_issue_description(case, event_log)
 
     correction: str | None = None
@@ -122,35 +83,17 @@ def run_turn(
             )
             continue
 
-        policy = policy_check(case, proposal)
-        if not policy.allowed:
-            corrections += 1
-            if corrections > _MAX_CORRECTIONS:
-                return _force_escalate(case, f"repeated policy violations: {policy.reason}")
-            correction = (
-                f"That action is not permitted yet: {policy.reason}. "
-                "Gather more evidence with a tool, ask the user a clarifying "
-                "question, or only escalate once you genuinely cannot proceed."
-            )
-            continue
-
-        if (
-            proposal.action == AgentAction.ASK_USER
-            and _stuck_clarifying(case)
-            and case.clarification_attempts >= 1
-            and _has_usable_issue_description(case)
-        ):
+        diagnosis_policy = check_diagnosis_policy(case, proposal)
+        if not diagnosis_policy.allowed:
             corrections += 1
             if corrections > _MAX_CORRECTIONS:
                 return _force_escalate(
                     case,
-                    "actionable issue was described but the agent did not start tool investigation",
+                    f"repeated diagnosis policy violations: {diagnosis_policy.reason}",
                 )
-            correction = (
-                "The employee has already described an actionable issue. "
-                "Do not ask for more pre-tool clarification. Call a tool now, "
-                "prefer `kb_search` or `resolution_history` using the app/service "
-                "and symptom from the conversation."
+            correction = diagnosis_policy.correction or (
+                f"Your previous response violated diagnosis policy: {diagnosis_policy.reason}. "
+                "Choose a valid next diagnostic step and try again."
             )
             continue
 
@@ -168,7 +111,7 @@ def run_turn(
                     inputs=last_trace.inputs,
                 )
             prev_phase = case.phase
-            _apply_transition(case, evaluate_transition(case))
+            case.phase = Phase.INVESTIGATING
             if event_log and case.phase != prev_phase:
                 record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
             continue
@@ -191,12 +134,19 @@ def run_turn(
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case, prev_phase.value, case.phase.value)
 
+        if case.phase == Phase.ESCALATING and not case.handoff_completed:
+            return _complete_runtime_handoff(
+                case,
+                "Investigation budget was exhausted without a safe self-service resolution",
+                event_log,
+            )
+
         # Bound the pre-investigation clarifying loop: if we keep asking the user
         # for a usable problem description and get nowhere, stop re-asking forever.
         if (
             proposal.action == AgentAction.ASK_USER
             and _stuck_clarifying(case)
-            and not _has_usable_issue_description(case)
+            and not has_usable_issue_description(case)
         ):
             case.clarification_attempts += 1
             if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
@@ -217,68 +167,6 @@ def _stuck_clarifying(case: CaseState) -> bool:
     """True while we are still trying to get a usable problem statement: pre-
     investigation (no tool has run) and not yet past the clarifying phases."""
     return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
-
-
-def _has_usable_issue_description(case: CaseState) -> bool:
-    """Heuristic gate for "we can investigate now".
-
-    This intentionally does not require a known corporate app. Unknown apps and
-    consumer-network symptoms can still be investigated through KB/history; they
-    should not be soft-closed as "no issue".
-    """
-    user_text = " ".join(
-        m["content"].lower()
-        for m in case.conversation
-        if m["role"] == "user"
-    )
-    normalized = " ".join(user_text.split())
-    if not normalized:
-        return False
-
-    if normalized.strip(".,!?;:()[]{}\"'") in _VAGUE_INTAKE_MESSAGES:
-        return False
-
-    has_symptom = any(symptom in normalized for symptom in _ISSUE_SYMPTOMS)
-    has_app_or_service = bool(re.search(
-        r"\b(app|application|vpn|website|site|browser|google|okta|snowflake|grafana|salesforce|shadow\w*)\b",
-        normalized,
-    ))
-    has_context = (
-        len(normalized.split()) >= 12
-        or any(marker in normalized for marker in (
-            "right now",
-            "today",
-            "yesterday",
-            "started",
-            "happening",
-            "connected",
-            "no error",
-            "error message",
-            "mac",
-            "macos",
-            "windows",
-            "website",
-            "google",
-        ))
-    )
-
-    return has_symptom and has_app_or_service and has_context
-
-
-def _needs_issue_description(case: CaseState, user_message: str) -> bool:
-    if case.phase != Phase.INTAKE:
-        return False
-    if case.tool_calls_total > 0:
-        return False
-    if len(case.conversation) != 1:
-        return False
-
-    text = " ".join(user_message.lower().strip().split())
-    text = text.strip(".,!?;:()[]{}\"'")
-    if text in _VAGUE_INTAKE_MESSAGES:
-        return True
-
-    return False
 
 
 def _ask_for_issue_description(
@@ -306,6 +194,29 @@ def _force_escalate(case: CaseState, reason: str) -> str:
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
     _apply_transition(case, evaluate_transition(case))
+    msg = (
+        "I wasn't able to fully resolve this issue. "
+        "I'm connecting you with an IT specialist who will have all the context — "
+        "you won't need to repeat yourself."
+    )
+    case.conversation.append({"role": "assistant", "content": msg})
+    return msg
+
+
+def _complete_runtime_handoff(
+    case: CaseState,
+    reason: str,
+    event_log: InMemoryEventLog | None,
+) -> str:
+    _build_escalation_context(case, reason, case.confidence)
+    case.handoff_completed = True
+    previous_phase = case.phase
+    _apply_transition(case, evaluate_transition(case))
+    if event_log:
+        record_escalation(event_log, case, reason)
+        if case.phase != previous_phase:
+            record_phase_transition(event_log, case, previous_phase.value, case.phase.value)
+
     msg = (
         "I wasn't able to fully resolve this issue. "
         "I'm connecting you with an IT specialist who will have all the context — "
