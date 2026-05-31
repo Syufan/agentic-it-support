@@ -21,6 +21,7 @@ def _build_webserver() -> ITSupportWebServer:
         response_parser=parse_proposal,
         api_key=settings.llm_api_key,
         model=settings.llm_model,
+        temperature=settings.llm_temperature,
     )
     tools = DEFAULT_TOOLS
     store = SessionStore()

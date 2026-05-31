@@ -11,6 +11,9 @@ from openai import OpenAI, OpenAIError, PermissionDeniedError
 #: about its shape; callers bind it (e.g. to AgentProposal) via response_parser.
 T = TypeVar("T")
 
+_MS_PER_SECOND = 1000
+_LATENCY_ROUND_DP = 2
+
 
 @dataclass
 class LLMInput:
@@ -66,10 +69,12 @@ class RealLLMClient(BaseLLMClient[T]):
         response_parser: Callable[[str], T],
         api_key: str = "",
         model: str = "",
+        temperature: float | None = None,
         client: OpenAI | None = None,
     ) -> None:
         self._parse = response_parser
         self._model = model
+        self._temperature = temperature
 
         if client is None and not api_key:
             raise LLMConfigurationError("no api_key was injected (settings.llm_api_key is empty)")
@@ -78,13 +83,16 @@ class RealLLMClient(BaseLLMClient[T]):
 
     def call(self, llm_input: LLMInput) -> T:
         started = time.perf_counter()
+        create_kwargs: dict = {
+            "model": self._model,
+            "messages": [{"role": "system", "content": llm_input.system}, *llm_input.messages],
+            "response_format": {"type": "json_object"},
+        }
+        # only set temperature when configured; otherwise let the provider default apply
+        if self._temperature is not None:
+            create_kwargs["temperature"] = self._temperature
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=[{"role": "system", "content": llm_input.system}, *llm_input.messages],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-            )
+            response = self._client.chat.completions.create(**create_kwargs)
         except PermissionDeniedError as exc:
             raise LLMProviderError(
                 f"LLM model '{self._model}' is not available to this API key"
@@ -92,7 +100,7 @@ class RealLLMClient(BaseLLMClient[T]):
         except OpenAIError as exc:
             raise LLMProviderError(f"LLM provider request failed: {exc}") from exc
 
-        self.last_stats = _stats_from(response, (time.perf_counter() - started) * 1000)
+        self.last_stats = _stats_from(response, (time.perf_counter() - started) * _MS_PER_SECOND)
 
         if not response.choices:
             raise LLMProviderError("LLM returned no choices")
@@ -106,5 +114,5 @@ def _stats_from(response, latency_ms: float) -> LLMCallStats:
         prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
         completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         total_tokens=getattr(usage, "total_tokens", 0) or 0,
-        latency_ms=round(latency_ms, 2),
+        latency_ms=round(latency_ms, _LATENCY_ROUND_DP),
     )

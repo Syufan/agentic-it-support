@@ -84,6 +84,7 @@ def run_all(
             response_parser=parse_proposal,
             api_key=settings.llm_api_key,
             model=settings.llm_model,
+            temperature=settings.llm_temperature,
         )
 
     results = []

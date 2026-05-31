@@ -232,6 +232,7 @@ if __name__ == "__main__":
             response_parser=parse_proposal,
             api_key=_settings.llm_api_key,
             model=_settings.llm_model,
+            temperature=_settings.llm_temperature,
         ),
         _TOOLS,
     )

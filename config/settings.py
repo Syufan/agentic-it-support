@@ -9,10 +9,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Deployment choices — no hardcoded default; .env (LLM_API_KEY / LLM_MODEL)
-    # is the source of truth. Empty means "must be provided to make real calls".
+    # Deployment / behaviour choices — no hardcoded default; .env is the source
+    # of truth (LLM_API_KEY / LLM_MODEL / LLM_TEMPERATURE). Empty / None means
+    # "not provided" — the client omits it and lets the provider default apply.
     llm_api_key: str = ""
     llm_model: str = ""
+    llm_temperature: float | None = None
 
     # Tunable knobs / list prices — safe defaults are fine here.
     confidence_retry_penalty: float = 0.15

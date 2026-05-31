@@ -187,6 +187,40 @@ def test_real_llm_records_token_usage():
     assert client.last_stats.completion_tokens == 30
 
 
+class _CapturingCompletions:
+    def __init__(self) -> None:
+        self.kwargs: dict = {}
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        return _FakeResponse('{"action": "ask_user", "reasoning_summary": "x", "message": "hi"}')
+
+
+def _capturing_client(completions: "_CapturingCompletions"):
+    class _Client:
+        class _Chat:
+            pass
+        chat = _Chat()
+    _Client.chat.completions = completions
+    return _Client()
+
+
+def test_real_llm_passes_injected_temperature_to_the_api():
+    completions = _CapturingCompletions()
+    client = RealLLMClient(response_parser=_echo, api_key="", model="m",
+                           temperature=0.9, client=_capturing_client(completions))
+    client.call(_llm_input())
+    assert completions.kwargs["temperature"] == 0.9
+
+
+def test_real_llm_omits_temperature_when_unset():
+    completions = _CapturingCompletions()
+    client = RealLLMClient(response_parser=_echo, api_key="", model="m",
+                           temperature=None, client=_capturing_client(completions))
+    client.call(_llm_input())
+    assert "temperature" not in completions.kwargs
+
+
 def test_real_llm_records_latency():
     client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientWithUsage())
     client.call(_llm_input())
