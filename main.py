@@ -2,9 +2,9 @@ from functools import partial
 
 import uvicorn
 
+from bootstrap import build_llm
 from config.settings import Settings
-from llm.client import BaseLLMClient, RealLLMClient
-from agent.parser import parse_proposal
+from llm.client import BaseLLMClient
 from api.server import ITSupportWebServer
 from runtime.controller import run_turn
 from state.session import SessionStore
@@ -17,11 +17,7 @@ DEFAULT_PORT = 8000
 
 def _build_webserver() -> ITSupportWebServer:
     settings = Settings()
-    llm = RealLLMClient(
-        response_parser=parse_proposal,
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-    )
+    llm = build_llm(settings)
     tools = DEFAULT_TOOLS
     store = SessionStore()
     turn_runner = partial(run_turn, settings=settings)

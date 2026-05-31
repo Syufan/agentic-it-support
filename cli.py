@@ -4,9 +4,9 @@ import threading
 import time
 from collections.abc import Callable
 
+from bootstrap import build_llm
 from config.settings import Settings
-from llm.client import BaseLLMClient, RealLLMClient
-from agent.parser import parse_proposal
+from llm.client import BaseLLMClient
 from observability.logger import InMemoryEventLog
 from observability.spinner import Spinner
 from runtime.controller import TurnCancelled, run_turn
@@ -228,10 +228,6 @@ if __name__ == "__main__":
     _settings = Settings()
     run_cli_session(
         CaseState(),
-        RealLLMClient(
-            response_parser=parse_proposal,
-            api_key=_settings.llm_api_key,
-            model=_settings.llm_model,
-        ),
+        build_llm(_settings),
         _TOOLS,
     )
