@@ -33,7 +33,7 @@ def check_workflow_guard(
         return _reject(
             state,
             f"repeated invalid proposals: {validation.reason}",
-            (
+            validation.correction or (
                 f"Your previous response was rejected: {validation.reason}. "
                 "Choose an action that is valid in the current phase and try again."
             ),

@@ -18,6 +18,10 @@ _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
 class ValidationResult:
     valid: bool
     reason: str | None = None
+    # Optional directive re-prompt for the agent. When set, the workflow guard
+    # surfaces it instead of the generic "pick a valid action" correction — used
+    # so a tool-limit rejection tells the agent to decide on current evidence.
+    correction: str | None = None
 
 
 def validate_proposal(
@@ -42,12 +46,28 @@ def validate_proposal(
             if proposal.tool_name not in valid_tools:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
             # Tool-call ceilings are expressed as a (correctable) invalid proposal:
-            # the workflow guard re-prompts the agent to resolve/escalate with what it
-            # has, rather than the runtime hard-escalating the case on the spot.
+            # the workflow guard re-prompts the agent to decide on current evidence,
+            # rather than the runtime hard-escalating the case on the spot. The turn
+            # and case ceilings differ: the turn budget refills next turn (so ASK_USER
+            # is a valid move), while the case budget is exhausted for good.
             if limits.tool_turn_limit_reached(case):
-                return ValidationResult(False, "turn tool-call limit reached")
+                return ValidationResult(
+                    False,
+                    "turn tool-call limit reached",
+                    correction=(
+                            "Tool-call limit reached for this turn. Do not propose another CALL_TOOL. "
+                            "Propose RESOLVE if current evidence is sufficient, or ASK_USER if more user input is needed. "
+                    ),
+                )
             if limits.tool_case_limit_reached(case):
-                return ValidationResult(False, "case tool-call limit reached")
+                return ValidationResult(
+                    False,
+                    "case tool-call limit reached",
+                    correction=(
+                        "You've reached the tool-call budget for this case; no further tool calls "
+                        "are available. Resolve the case using the evidence already gathered."
+                    ),
+                )
 
         case AgentAction.RESOLVE:
             if not proposal.message:

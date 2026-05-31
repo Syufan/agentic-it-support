@@ -176,6 +176,9 @@ def test_call_tool_rejected_when_turn_tool_limit_reached():
     )
     assert result.valid is False
     assert "turn tool-call limit" in result.reason
+    # turn budget refills next turn, so ASK_USER stays on the table
+    assert "ASK_USER" in result.correction
+    assert "next turn" in result.correction
 
 
 def test_call_tool_rejected_when_case_tool_limit_reached():
@@ -187,6 +190,9 @@ def test_call_tool_rejected_when_case_tool_limit_reached():
     )
     assert result.valid is False
     assert "case tool-call limit" in result.reason
+    # case budget is spent for good — ASK_USER is not offered, only RESOLVE/ESCALATE
+    assert "RESOLVE" in result.correction and "ESCALATE" in result.correction
+    assert "ASK_USER" not in result.correction
 
 
 @pytest.mark.parametrize("tool_name", [
