@@ -7,11 +7,18 @@ from typing import Generic, TypeVar
 
 from openai import OpenAI, OpenAIError, PermissionDeniedError
 
-from runtime.message_builder import LLMInput
-
 #: The parsed domain object a client yields. The transport layer stays agnostic
 #: about its shape; callers bind it (e.g. to AgentProposal) via response_parser.
 T = TypeVar("T")
+
+
+@dataclass
+class LLMInput:
+    """The input contract for an LLM client: a system prompt plus the message
+    list. Lives here (the transport layer) so callers like message_builder
+    construct it; the client no longer reaches back into runtime for its type."""
+    system: str
+    messages: list[dict[str, str]]
 
 
 @dataclass

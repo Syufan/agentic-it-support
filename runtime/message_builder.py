@@ -1,7 +1,7 @@
 import json
-from dataclasses import dataclass
 
 from agent.prompts import clarifying, escalating, intake, investigating, resolving
+from llm.client import LLMInput
 from state.case_state import CaseState, Phase
 
 _PROMPTS: dict[Phase, str] = {
@@ -15,12 +15,6 @@ _PROMPTS: dict[Phase, str] = {
 #: how many recent tool results to surface to the LLM, and how much of each
 _MAX_TOOL_TRACES_IN_CONTEXT = 3
 _TOOL_OUTPUT_PREVIEW_CHARS = 200
-
-
-@dataclass
-class LLMInput:
-    system: str
-    messages: list[dict[str, str]]
 
 
 def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
