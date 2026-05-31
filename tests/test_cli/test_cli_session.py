@@ -1,7 +1,7 @@
 from llm.client import BaseLLMClient, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from cli import _format_status, run_cli_session, typewrite
-from runtime.controller import TurnCancelled
+from runtime.query_loop import TurnCancelled
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, Phase
 

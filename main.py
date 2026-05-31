@@ -6,7 +6,7 @@ from agent.parser import parse_proposal
 from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from api.server import ITSupportWebServer
-from runtime.controller import run_turn
+from runtime.query_loop import run_turn
 from state.session import SessionStore
 from tools import DEFAULT_TOOLS
 from tools.base import BaseTool

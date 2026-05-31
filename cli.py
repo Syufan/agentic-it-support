@@ -9,7 +9,7 @@ from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from observability.event_tracing import InMemoryEventLog
 from runtime import limits
-from runtime.controller import TurnCancelled, run_turn
+from runtime.query_loop import TurnCancelled, run_turn
 from state.case_state import CaseState, Phase
 from tools import DEFAULT_TOOLS
 

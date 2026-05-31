@@ -9,7 +9,7 @@ from observability.event_tracing import (
     record_turn_start,
 )
 from runtime import limits
-from runtime.action_runner import (
+from runtime.action_executor import (
     _execute_tool,
     _project_to_state,
     ask_for_issue_description,

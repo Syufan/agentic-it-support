@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.server import ITSupportWebServer
-from runtime.controller import run_turn
+from runtime.query_loop import run_turn
 from state.session import SessionStore
 from tools.base import BaseTool, ToolResult
 from typing import Any

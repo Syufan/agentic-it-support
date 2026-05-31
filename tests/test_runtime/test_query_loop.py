@@ -5,7 +5,7 @@ from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.event_tracing import InMemoryEventLog
 from runtime import limits
-from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
+from runtime.query_loop import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
