@@ -145,7 +145,10 @@ def run_cli_session(
             writer(f"{_DIM}— turn cancelled, continue the conversation —{_RESET}")
             continue
 
+        writer("")
+        writer(f"{_BOLD}Agent:{_RESET}")
         writer(response)
+        writer("")
 
     if case.phase == Phase.CLOSED:
         writer(f"{_DIM}case closed: {case.case_id}{_RESET}")
