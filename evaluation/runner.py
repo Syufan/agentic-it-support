@@ -11,10 +11,10 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from bootstrap import build_llm
+from agent.parser import parse_proposal
 from config.settings import Settings
 from evaluation import EvaluationResult, evaluate
-from llm.client import BaseLLMClient
+from llm.client import BaseLLMClient, RealLLMClient
 from runtime.controller import run_turn
 from state.case_state import CaseState
 from tools import DEFAULT_TOOLS
@@ -80,7 +80,11 @@ def run_all(
 ) -> list[ScenarioResult]:
     settings = settings or Settings()
     if llm is None:
-        llm = build_llm(settings)
+        llm = RealLLMClient(
+            response_parser=parse_proposal,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+        )
 
     results = []
     for path in sorted(scenarios_dir.glob("*.json")):
