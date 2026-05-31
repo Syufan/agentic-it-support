@@ -1,8 +1,7 @@
 import json
-from dataclasses import dataclass
 
 from agent.prompts import clarifying, escalating, intake, investigating, resolving
-from state import budget as budget_
+from llm.client import LLMInput
 from state.case_state import CaseState, Phase
 
 _PROMPTS: dict[Phase, str] = {
@@ -13,20 +12,21 @@ _PROMPTS: dict[Phase, str] = {
     Phase.ESCALATING:    escalating.SYSTEM_PROMPT,
 }
 
-
-@dataclass
-class LLMInput:
-    system: str
-    messages: list[dict[str, str]]
+#: how many recent tool results to surface to the LLM, and how much of each
+_MAX_TOOL_TRACES_IN_CONTEXT = 3
+_TOOL_OUTPUT_PREVIEW_CHARS = 1000
 
 
 def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
     system = _PROMPTS.get(case.phase, investigating.SYSTEM_PROMPT)
+
+    # A correction is a runtime instruction ("your last response was rejected,
+    # do X"), so it belongs in the system prompt, not buried in the user turn.
+    if correction:
+        system = system + "\n\n[Correction] " + correction
+
     messages = [dict(m) for m in case.conversation]
     observation = _build_observation(case)
-
-    if correction:
-        observation = observation + "\n\n[Correction] " + correction
 
     if messages and messages[-1]["role"] == "user":
         messages[-1]["content"] = messages[-1]["content"] + "\n\n" + observation
@@ -40,8 +40,6 @@ def _build_observation(case: CaseState) -> str:
     lines = [
         "[Case State]",
         f"Phase: {case.phase.value}",
-        f"Confidence: {case.confidence}",
-        f"Tool budget: used {case.tool_calls_current_investigation} / remaining {budget_.remaining(case.budget_mode, case.tool_calls_current_investigation)} (mode: {case.budget_mode.value})",
     ]
 
     if case.facts:
@@ -55,9 +53,9 @@ def _build_observation(case: CaseState) -> str:
 
     if case.tool_traces:
         lines.append("Tool results:")
-        for trace in case.tool_traces[-3:]:
+        for trace in case.tool_traces[-_MAX_TOOL_TRACES_IN_CONTEXT:]:
             status = "ok" if trace.success else "failed"
-            output_preview = json.dumps(trace.output)[:200]
+            output_preview = json.dumps(trace.output)[:_TOOL_OUTPUT_PREVIEW_CHARS]
             lines.append(f"  [{status}] {trace.tool_name}: {output_preview}")
 
     if case.failed_resolutions:

@@ -1,30 +1,32 @@
 from dataclasses import dataclass
 
-from config import CONFIDENCE_HIGH, MAX_RESOLUTION_ATTEMPTS
-from state import budget as budget_
-from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
+from agent.proposals import AgentAction
+from runtime.constants import MAX_RESOLUTION_ATTEMPTS
+from state.case_state import CaseState, Phase
 
 
 @dataclass
 class TransitionResult:
     next_phase: Phase
-    budget_mode: BudgetMode | None = None
-    reset_tool_counter: bool = False
-    set_exception_used: bool = False
 
 
 def _result(phase: Phase, **kwargs) -> TransitionResult:
     return TransitionResult(next_phase=phase, **kwargs)
 
 
-def evaluate_transition(case: CaseState) -> TransitionResult:
+def evaluate_transition(case: CaseState, action: AgentAction) -> TransitionResult:
+    """Decide the next phase from (current phase, action, guard fields).
+
+    `action` is the discrete event that just got accepted; the case fields
+    (confidence, counters, resolution_attempts, ...) are the guards. No LLM call.
+    """
     match case.phase:
         case Phase.INTAKE:
-            return _from_intake(case)
+            return _from_intake(action)
         case Phase.CLARIFYING:
-            return _from_clarifying(case)
+            return _from_clarifying(action)
         case Phase.INVESTIGATING:
-            return _from_investigating(case)
+            return _from_investigating(case, action)
         case Phase.RESOLVING:
             return _from_resolving(case)
         case Phase.ESCALATING:
@@ -33,34 +35,28 @@ def evaluate_transition(case: CaseState) -> TransitionResult:
             return _result(Phase.CLOSED)
 
 
-def _from_intake(case: CaseState) -> TransitionResult:
-    if case.missing_info_source == MissingInfoSource.USER and case.missing_info:
+def _from_intake(action: AgentAction) -> TransitionResult:
+    if action == AgentAction.ASK_USER:
         return _result(Phase.CLARIFYING)   # T1
     return _result(Phase.INVESTIGATING)    # T2
 
 
-def _from_clarifying(case: CaseState) -> TransitionResult:
-    if not case.missing_info:
-        return _result(Phase.INVESTIGATING)  # T3
-    return _result(Phase.CLARIFYING)
+def _from_clarifying(action: AgentAction) -> TransitionResult:
+    if action == AgentAction.ASK_USER:
+        return _result(Phase.CLARIFYING)
+    return _result(Phase.INVESTIGATING)    # T3
 
 
-def _from_investigating(case: CaseState) -> TransitionResult:
-    if case.confidence >= CONFIDENCE_HIGH:
-        return _result(Phase.RESOLVING)    # T4
-
-    budget_done = budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation)
-
-    if budget_done:
-        if case.has_safe_low_risk_guidance:
-            return _result(Phase.RESOLVING)                      # T9
-        if case.missing_info_source == MissingInfoSource.USER:
-            return _result(Phase.CLARIFYING)                     # T7 (budget exhausted)
-        return _result(Phase.ESCALATING)                         # T8
-
-    if case.missing_info_source == MissingInfoSource.TOOL:
-        return _result(Phase.INVESTIGATING)                      # T6
-    return _result(Phase.CLARIFYING)                             # T7 (non-tool source)
+def _from_investigating(case: CaseState, action: AgentAction) -> TransitionResult:
+    # Action-driven. Whether the action is *allowed* (tool budget, enough evidence to
+    # resolve) is decided upstream by the validator + diagnosis_policy; here we only
+    # map an accepted action to the next phase. ESCALATE never reaches this function —
+    # action_executor pre-sets ESCALATING for it (see [[action-executor-risk-boundaries]]).
+    if action == AgentAction.RESOLVE:
+        return _result(Phase.RESOLVING)        # T4 — propose a fix, await confirmation
+    if action == AgentAction.ASK_USER:
+        return _result(Phase.CLARIFYING)       # T7 — need user-only info
+    return _result(Phase.INVESTIGATING)        # T6 — a tool call (or default) keeps investigating
 
 
 def _from_resolving(case: CaseState) -> TransitionResult:
@@ -69,19 +65,7 @@ def _from_resolving(case: CaseState) -> TransitionResult:
 
     if case.user_confirmed_resolution is False:
         if case.resolution_attempts < MAX_RESOLUTION_ATTEMPTS:
-            return _result(                                      # T11
-                Phase.INVESTIGATING,
-                budget_mode=BudgetMode.RETRY,
-                reset_tool_counter=True,
-            )
-
-        if case.new_critical_fact_added and not case.exception_used:
-            return _result(                                      # T12
-                Phase.CLARIFYING,
-                budget_mode=BudgetMode.EXCEPTION,
-                reset_tool_counter=True,
-                set_exception_used=True,
-            )
+            return _result(Phase.INVESTIGATING)                  # T11
 
         return _result(Phase.ESCALATING)                         # T13
 

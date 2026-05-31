@@ -76,8 +76,8 @@ def test_efficiency_decreases_with_more_tool_calls():
     assert evaluate(case_few).tool_efficiency > evaluate(case_many).tool_efficiency
 
 
-def test_efficiency_is_0_when_budget_exhausted():
+def test_efficiency_is_0_when_tool_case_limit_reached():
     case = _closed_case()
-    case.tool_calls_total = 5  # MAIN_TOOL_BUDGET
+    case.tool_calls_total = 6
     result = evaluate(case)
     assert result.tool_efficiency == 0.0

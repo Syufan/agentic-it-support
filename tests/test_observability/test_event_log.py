@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from agent.llm import MockLLMClient
+from llm.client import BaseLLMClient, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from observability.logger import Event, InMemoryEventLog
-from runtime.controller import run_turn
-from state.case_state import CaseState, MissingInfoSource, Phase
+from observability.event_tracing import Event, InMemoryEventLog
+from runtime.query_loop import run_turn
+from state.case_state import CaseState, Phase
 from tools.base import BaseTool, ToolResult
 from typing import Any
 
@@ -80,6 +80,20 @@ def test_of_type_returns_empty_for_unknown_type():
     assert log.of_type("nonexistent") == []
 
 
+def test_unbounded_by_default():
+    log = InMemoryEventLog()
+    for _ in range(100):
+        log.record(Event(type="t", case_id="x", phase="intake", confidence=0.0))
+    assert len(log.events()) == 100
+
+
+def test_max_events_drops_oldest():
+    log = InMemoryEventLog(max_events=2)
+    for i in range(3):
+        log.record(Event(type=str(i), case_id="x", phase="intake", confidence=0.0))
+    assert [e.type for e in log.events()] == ["1", "2"]
+
+
 # ── controller integration ────────────────────────────────────────────────────
 
 def test_turn_start_event_recorded():
@@ -97,7 +111,7 @@ def test_tool_call_event_recorded():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
@@ -115,7 +129,7 @@ def test_tool_call_event_records_success():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
@@ -127,7 +141,7 @@ def test_phase_transition_event_recorded():
     case = CaseState()
     log = InMemoryEventLog()
     run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info_source=MissingInfoSource.USER, missing_info=["OS"],
+        missing_info=["OS"],
     )]), {}, event_log=log)
 
     transitions = log.of_type("phase_transition")
@@ -147,6 +161,25 @@ def test_escalation_event_recorded():
     esc_events = log.of_type("escalation")
     assert len(esc_events) == 1
     assert esc_events[0].details["reason"] == "Needs admin"
+
+
+def test_forced_escalation_is_recorded():
+    # A runtime-initiated handoff (here: LLM provider failure) must leave a trace —
+    # force_escalate used to drop the event because it had no event_log parameter.
+    class _FailingLLM(BaseLLMClient):
+        def call(self, llm_input):
+            from llm.client import LLMProviderError
+            raise LLMProviderError("provider down")
+
+    case = CaseState()
+    log = InMemoryEventLog()
+    run_turn(case, "VPN broken", _FailingLLM(), {}, event_log=log)
+
+    esc_events = log.of_type("escalation")
+    assert len(esc_events) == 1
+    assert "provider error" in esc_events[0].details["reason"].lower()
+    # and the phase transition into the closed/handoff state is traced too
+    assert log.of_type("phase_transition")
 
 
 def test_no_event_log_does_not_raise():

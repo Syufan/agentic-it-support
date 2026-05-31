@@ -1,6 +1,6 @@
 import time
 
-from observability.spinner import Spinner, format_waiting_line
+from cli import _SPINNER_CLEAR, Spinner, format_waiting_line
 
 
 # ── format_waiting_line (pure function) ───────────────────────────────────────
@@ -49,8 +49,10 @@ def test_spinner_stop_clears_line():
     spinner.start()
     time.sleep(0.25)
     spinner.stop()
+    # stop() wipes the spinner line: return to column 0 and erase it (width-independent)
     last = output[-1]
-    assert last.startswith("\r") and last.strip() == ""
+    assert last.startswith("\r")
+    assert last == _SPINNER_CLEAR
 
 
 def test_spinner_does_not_raise_on_stop_before_start():

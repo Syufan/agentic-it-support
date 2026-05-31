@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from config import MAIN_TOOL_BUDGET
+from runtime.limits import MAX_TOOL_CALLS_PER_CASE
 from state.case_state import CaseState, Phase
 
 
@@ -12,13 +12,13 @@ class EvaluationResult:
     resolution_attempts: int
     final_confidence: float
     final_phase: str
-    tool_efficiency: float  # 0.0 (spent all budget) → 1.0 (no tools used)
+    tool_efficiency: float  # 0.0 (spent all tool calls) -> 1.0 (no tools used)
 
 
 def evaluate(case: CaseState) -> EvaluationResult:
     escalated = bool(case.escalation_context)
     resolved = case.phase == Phase.CLOSED and not escalated
-    efficiency = max(0.0, 1.0 - case.tool_calls_total / MAIN_TOOL_BUDGET)
+    efficiency = max(0.0, 1.0 - case.tool_calls_total / MAX_TOOL_CALLS_PER_CASE)
 
     return EvaluationResult(
         resolved=resolved,

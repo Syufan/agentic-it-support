@@ -1,8 +1,25 @@
 import pytest
 
 from agent.proposals import AgentAction, AgentProposal
-from policy import check
-from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
+from policy.engine import check_business_policy as _check_business_policy
+from policy.engine import find_policy_rules, load_policy_rules
+from runtime import limits
+from runtime.diagnosis_policy import check_diagnosis_policy as check
+from state.case_state import CaseState, Phase
+
+
+def check_business_policy(case, proposal):
+    """Adapt the decoupled engine signature (action, text) to these proposal-based
+    tests; `case` is unused, mirroring how the runtime extracts the inputs."""
+    text = " ".join(
+        part for part in (
+            proposal.message or "",
+            proposal.reasoning_summary,
+            proposal.escalation_reason or "",
+        )
+        if part
+    )
+    return _check_business_policy(proposal.action.value, text)
 
 
 def _proposal(**kwargs) -> AgentProposal:
@@ -26,8 +43,8 @@ def _case(**kwargs) -> CaseState:
 
 # ── premature escalation guard ────────────────────────────────────────────────
 
-def test_escalate_blocked_when_budget_remains_and_confidence_above_low():
-    case = _case(tool_calls_current_investigation=0, budget_mode=BudgetMode.MAIN)
+def test_escalate_blocked_when_tool_limit_not_reached_and_confidence_above_low():
+    case = _case(tool_calls_total=0)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -35,9 +52,8 @@ def test_escalate_blocked_when_budget_remains_and_confidence_above_low():
     assert "premature escalation" in decision.reason
 
 
-def test_escalate_blocked_when_budget_remains_even_with_low_confidence():
-    case = _case(tool_calls_total=1, tool_calls_current_investigation=1,
-                 budget_mode=BudgetMode.MAIN)
+def test_escalate_blocked_when_tool_limit_not_reached_even_with_low_confidence():
+    case = _case(tool_calls_total=1)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -45,9 +61,8 @@ def test_escalate_blocked_when_budget_remains_even_with_low_confidence():
     assert "premature escalation" in decision.reason
 
 
-def test_escalate_allowed_when_budget_exhausted():
-    case = _case(tool_calls_total=5, tool_calls_current_investigation=5,
-                 budget_mode=BudgetMode.MAIN)
+def test_escalate_allowed_when_tool_case_limit_reached():
+    case = _case(tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -55,16 +70,14 @@ def test_escalate_allowed_when_budget_exhausted():
 
 
 def test_escalate_allowed_when_already_in_escalating_phase():
-    case = _case(phase=Phase.ESCALATING, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(phase=Phase.ESCALATING, tool_calls_total=0)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     assert check(case, proposal).allowed
 
 
 def test_escalate_blocked_before_any_tool_for_investigable_issue():
-    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(tool_calls_total=0)
     proposal = _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
@@ -77,8 +90,7 @@ def test_escalate_blocked_before_any_tool_for_investigable_issue():
 
 
 def test_escalate_allowed_before_tool_for_direct_handoff_reason():
-    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(tool_calls_total=0)
     proposal = _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
@@ -114,46 +126,10 @@ def test_resolve_blocked_when_no_tools_called_even_with_high_confidence():
     assert "resolve blocked" in decision.reason
 
 
-def test_resolve_allowed_when_tools_called_even_with_low_confidence():
-    case = _case(tool_calls_total=2)
+def test_resolve_allowed_once_confidence_clears_the_bar():
+    # Model B: the gate is evidence-based confidence, not the tool-call counter.
+    case = _case(confidence=0.35)
     proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.3, message="Try this")
-    decision = check(case, proposal)
-    assert decision.allowed
-
-
-# ── high-confidence resolve guard ────────────────────────────────────────────
-
-def test_high_confidence_resolve_blocked_with_single_user_turn_and_one_tool():
-    case = _case(tool_calls_total=1)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
-    decision = check(case, proposal)
-    assert not decision.allowed
-    assert "insufficient investigation" in decision.reason
-
-
-def test_high_confidence_resolve_allowed_after_user_clarification():
-    case = _case(tool_calls_total=1)
-    case.conversation = [
-        {"role": "user", "content": "VPN broken"},
-        {"role": "assistant", "content": "What OS?"},
-        {"role": "user", "content": "macOS"},
-    ]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
-    assert check(case, proposal).allowed
-
-
-def test_high_confidence_resolve_allowed_after_thorough_tool_investigation():
-    case = _case(tool_calls_total=2)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
-    assert check(case, proposal).allowed
-
-
-def test_medium_confidence_resolve_not_blocked_by_this_rule():
-    case = _case(tool_calls_total=1)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try this")
     assert check(case, proposal).allowed
 
 
@@ -170,3 +146,66 @@ def test_call_tool_always_allowed():
     proposal = _proposal(action=AgentAction.CALL_TOOL, confidence=0.5,
                          tool_name="kb_search", tool_input={"query": "vpn"}, message=None)
     assert check(case, proposal).allowed
+
+
+# ── business authorization policy ──────────────────────────────────────────────
+
+def test_business_policy_rules_load_from_policy_data():
+    rules = load_policy_rules()
+    assert any(rule.action == "reset_mfa_device" for rule in rules)
+    assert any(rule.authorization == "human" for rule in rules)
+
+
+def test_business_policy_find_rules_by_query():
+    matches = find_policy_rules("mfa")
+    assert [rule.action for rule in matches] == ["reset_mfa_device"]
+
+
+def test_business_policy_blocks_human_only_resolution():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="I can reset your MFA device now.",
+    )
+    decision = check_business_policy(case, proposal)
+    assert not decision.allowed
+    assert decision.matched_rule is not None
+    assert decision.matched_rule.action == "reset_mfa_device"
+    assert "human approval required" in decision.reason
+
+
+def test_business_policy_blocks_direct_access_grant_without_approval():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="I will grant software access directly.",
+    )
+    decision = check_business_policy(case, proposal)
+    assert not decision.allowed
+    assert decision.matched_rule is not None
+    assert decision.matched_rule.action == "grant_software_access"
+    assert "approval required" in decision.reason
+
+
+def test_business_policy_allows_agent_authorized_guidance():
+    case = _case(tool_calls_total=1)
+    proposal = _proposal(
+        action=AgentAction.RESOLVE,
+        confidence=0.9,
+        message="Use the self-service password reset flow.",
+    )
+    assert check_business_policy(case, proposal).allowed
+
+
+# ── decoupled engine contract: (action, text), no proposal/case ───────────────
+
+def test_engine_takes_action_and_text_directly():
+    decision = _check_business_policy("resolve", "I can reset your MFA device now.")
+    assert not decision.allowed
+    assert decision.matched_rule.action == "reset_mfa_device"
+
+
+def test_engine_passes_through_non_resolve_actions():
+    assert _check_business_policy("ask_user", "anything at all").allowed
