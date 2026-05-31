@@ -475,16 +475,10 @@ def test_runtime_tool_limit_escalation_builds_handoff_context():
 
 # ── confidence transparency (P1.7) ───────────────────────────────────────────
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="format_response wording still keys off CONFIDENCE_HIGH(0.8); evidence "
-    "confidence caps at 0.7 so the confident prefix never shows. Wording threshold "
-    "is deferred to the round that reworks how confidence is consumed.",
-)
 def test_high_confidence_resolve_has_confident_prefix():
+    # two successful sources reach the evidence ceiling (0.7 == CONFIDENCE_HIGH), so the
+    # resolution gets the confident "likely fix" prefix rather than the hedged one.
     case = _case_after_clarification()
-    # even at the evidence ceiling (two successful sources → 0.7) the wording stays
-    # hedged because the confident prefix keys off CONFIDENCE_HIGH (0.8).
     case.tool_traces = [
         ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True),
         ToolTrace(tool_name="status_api", inputs={}, output={}, success=True),
