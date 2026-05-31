@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from llm.client import MockLLMClient
+from llm.client import BaseLLMClient, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.event_tracing import Event, InMemoryEventLog
 from runtime.query_loop import run_turn
@@ -161,6 +161,25 @@ def test_escalation_event_recorded():
     esc_events = log.of_type("escalation")
     assert len(esc_events) == 1
     assert esc_events[0].details["reason"] == "Needs admin"
+
+
+def test_forced_escalation_is_recorded():
+    # A runtime-initiated handoff (here: LLM provider failure) must leave a trace —
+    # force_escalate used to drop the event because it had no event_log parameter.
+    class _FailingLLM(BaseLLMClient):
+        def call(self, llm_input):
+            from llm.client import LLMProviderError
+            raise LLMProviderError("provider down")
+
+    case = CaseState()
+    log = InMemoryEventLog()
+    run_turn(case, "VPN broken", _FailingLLM(), {}, event_log=log)
+
+    esc_events = log.of_type("escalation")
+    assert len(esc_events) == 1
+    assert "provider error" in esc_events[0].details["reason"].lower()
+    # and the phase transition into the closed/handoff state is traced too
+    assert log.of_type("phase_transition")
 
 
 def test_no_event_log_does_not_raise():

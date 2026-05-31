@@ -52,13 +52,13 @@ def run_turn(
         # Pre-step runtime guard，case-level hard limit
         _raise_if_cancelled(should_cancel)
         if limits.llm_case_limit_reached(case):
-            return force_escalate(case, "maximum LLM calls reached without resolution")
+            return force_escalate(case, "maximum LLM calls reached without resolution", event_log)
 
         # Agent proposal
         try:
             proposal = _call_agent(case, correction, llm, event_log)
         except (LLMClientError, ProposalParseError):
-            return force_escalate(case, "LLM provider error during investigation")
+            return force_escalate(case, "LLM provider error during investigation", event_log)
 
         # Interrupt
         _raise_if_cancelled(should_cancel)
@@ -67,7 +67,7 @@ def run_turn(
         correction = None
         guard = check_workflow_guard(case, proposal, tool_registry, guard_state)
         if guard.escalation_reason:
-            return force_escalate(case, guard.escalation_reason)
+            return force_escalate(case, guard.escalation_reason, event_log)
         if not guard.allowed:
             correction = guard.correction
             continue
@@ -78,7 +78,7 @@ def run_turn(
             continue
         return outcome.message or ""
 
-    return force_escalate(case, "maximum investigation steps reached without resolution")
+    return force_escalate(case, "maximum investigation steps reached without resolution", event_log)
 
 
 def _call_agent(

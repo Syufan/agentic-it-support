@@ -176,9 +176,9 @@ def test_call_tool_rejected_when_turn_tool_limit_reached():
     )
     assert result.valid is False
     assert "turn tool-call limit" in result.reason
-    # turn budget refills next turn, so ASK_USER stays on the table
+    # turn budget refills next turn, so the agent is steered to RESOLVE or ASK_USER
+    assert "RESOLVE" in result.correction
     assert "ASK_USER" in result.correction
-    assert "next turn" in result.correction
 
 
 def test_call_tool_rejected_when_case_tool_limit_reached():
@@ -190,9 +190,11 @@ def test_call_tool_rejected_when_case_tool_limit_reached():
     )
     assert result.valid is False
     assert "case tool-call limit" in result.reason
-    # case budget is spent for good — ASK_USER is not offered, only RESOLVE/ESCALATE
-    assert "RESOLVE" in result.correction and "ESCALATE" in result.correction
-    assert "ASK_USER" not in result.correction
+    # runtime states the constraint (no more tools) and asks for a non-tool action on
+    # existing evidence — it does NOT prescribe which terminal action to take, leaving
+    # the proposal to the LLM and the outcome to the transitions.
+    assert "no longer allowed" in result.correction
+    assert "non-tool action" in result.correction
 
 
 @pytest.mark.parametrize("tool_name", [

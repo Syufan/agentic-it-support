@@ -23,6 +23,15 @@ class ActionOutcome:
     message: str | None = None
 
 
+# Single source for the handoff wording, shared by every escalation path so the
+# three of them can't drift apart.
+_HANDOFF_TAIL = (
+    "I'm connecting you with an IT specialist who will have all the context — "
+    "you won't need to repeat yourself."
+)
+_GENERIC_HANDOFF = f"I wasn't able to fully resolve this issue. {_HANDOFF_TAIL}"
+
+
 def run_accepted_action(
     case: CaseState,
     proposal: AgentProposal,
@@ -64,18 +73,28 @@ def ask_for_issue_description(
     return message
 
 
-def force_escalate(case: CaseState, reason: str) -> str:
+def force_escalate(
+    case: CaseState,
+    reason: str,
+    event_log: InMemoryEventLog | None = None,
+) -> str:
+    """Runtime-initiated handoff: build context, hand off, and close — recording
+    the escalation. Used both when the runtime gives up (budget / provider / loop
+    limits) and when a transition lands in ESCALATING before the agent completed
+    the handoff. The user-facing message stays generic on purpose: internal reasons
+    (repeated invalid proposals, provider errors, ...) must not leak to the employee.
+    """
+    previous_phase = case.phase
     _build_escalation_context(case, reason, case.confidence)
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
+    if event_log:
+        record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
     _apply_transition(case, evaluate_transition(case, AgentAction.ESCALATE))
-    msg = (
-        "I wasn't able to fully resolve this issue. "
-        "I'm connecting you with an IT specialist who will have all the context — "
-        "you won't need to repeat yourself."
-    )
-    case.conversation.append({"role": "assistant", "content": msg})
-    return msg
+    if event_log:
+        _record_phase_if_changed(case, previous_phase, event_log)
+    case.conversation.append({"role": "assistant", "content": _GENERIC_HANDOFF})
+    return _GENERIC_HANDOFF
 
 
 def _run_tool_action(
@@ -133,14 +152,15 @@ def _run_terminal_action(
     if case.phase == Phase.ESCALATING and not case.handoff_completed:
         return ActionOutcome(
             continue_loop=False,
-            message=_complete_runtime_handoff(
+            message=force_escalate(
                 case,
                 "Investigation tool-call limit was reached without a safe self-service resolution",
                 event_log,
             ),
         )
 
-    if _should_soft_close(case, proposal):
+    _track_clarification_attempt(case, proposal)
+    if _is_unproductive_clarification(case, proposal) and limits.clarification_limit_reached(case):
         return ActionOutcome(continue_loop=False, message=_soft_close(case))
 
     response = _format_response(proposal, case.confidence)
@@ -148,43 +168,28 @@ def _run_terminal_action(
     return ActionOutcome(continue_loop=False, message=response)
 
 
-def _should_soft_close(case: CaseState, proposal: AgentProposal) -> bool:
-    if not (
+def _track_clarification_attempt(case: CaseState, proposal: AgentProposal) -> None:
+    """Count consecutive unproductive clarifying turns; reset to zero the moment the
+    case makes progress (a tool call, a resolution, or a usable issue description).
+    Mutates `case.clarification_attempts` — kept separate from the soft-close check."""
+    if _is_unproductive_clarification(case, proposal):
+        case.clarification_attempts += 1
+    else:
+        case.clarification_attempts = 0
+
+
+def _is_unproductive_clarification(case: CaseState, proposal: AgentProposal) -> bool:
+    """A clarifying question that can't move the case forward: we're still pre-tool
+    in intake/clarifying and the employee still hasn't given a usable issue."""
+    return (
         proposal.action == AgentAction.ASK_USER
         and _stuck_clarifying(case)
         and not has_usable_issue_description(case)
-    ):
-        case.clarification_attempts = 0
-        return False
-
-    case.clarification_attempts += 1
-    return limits.clarification_limit_reached(case)
+    )
 
 
 def _stuck_clarifying(case: CaseState) -> bool:
     return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
-
-
-def _complete_runtime_handoff(
-    case: CaseState,
-    reason: str,
-    event_log: InMemoryEventLog | None,
-) -> str:
-    _build_escalation_context(case, reason, case.confidence)
-    case.handoff_completed = True
-    previous_phase = case.phase
-    _apply_transition(case, evaluate_transition(case, AgentAction.ESCALATE))
-    if event_log:
-        record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
-        _record_phase_if_changed(case, previous_phase, event_log)
-
-    msg = (
-        "I wasn't able to fully resolve this issue. "
-        "I'm connecting you with an IT specialist who will have all the context — "
-        "you won't need to repeat yourself."
-    )
-    case.conversation.append({"role": "assistant", "content": msg})
-    return msg
 
 
 def _soft_close(case: CaseState) -> str:
@@ -284,14 +289,10 @@ def _build_escalation_context(
 
 def _format_response(proposal: AgentProposal, confidence: float) -> str:
     if proposal.action == AgentAction.ESCALATE:
-        handoff = (
-            "I'm connecting you with an IT specialist who will have all the context — "
-            "you won't need to repeat yourself."
-        )
         reason = (proposal.escalation_reason or "").strip()
         if reason:
-            return f"{reason} {handoff}"
-        return f"I wasn't able to fully resolve this issue. {handoff}"
+            return f"{reason} {_HANDOFF_TAIL}"
+        return _GENERIC_HANDOFF
 
     if proposal.action == AgentAction.RESOLVE:
         message = proposal.message or ""

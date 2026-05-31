@@ -64,8 +64,8 @@ def validate_proposal(
                     False,
                     "case tool-call limit reached",
                     correction=(
-                        "You've reached the tool-call budget for this case; no further tool calls "
-                        "are available. Resolve the case using the evidence already gathered."
+                        "The case limit has been reached. Tool use is no longer allowed. "
+                        "Choose a valid non-tool action based only on the existing case evidence."
                     ),
                 )
 
