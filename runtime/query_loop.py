@@ -10,8 +10,6 @@ from observability.event_tracing import (
 )
 from runtime import limits
 from runtime.action_executor import (
-    _execute_tool,
-    _project_to_state,
     ask_for_issue_description,
     force_escalate,
     run_accepted_action,
@@ -51,31 +49,31 @@ def run_turn(
     guard_state = GuardState()
 
     for _ in range(limits.MAX_INNER_ITERATIONS):
+        # Pre-step runtime guard，case-level hard limit
         _raise_if_cancelled(should_cancel)
         if limits.llm_case_limit_reached(case):
             return force_escalate(case, "maximum LLM calls reached without resolution")
 
+        # Agent proposal
         try:
             proposal = _call_agent(case, correction, llm, event_log)
         except (LLMClientError, ProposalParseError):
             return force_escalate(case, "LLM provider error during investigation")
-        correction = None
+        
+        # Interrupt
         _raise_if_cancelled(should_cancel)
 
+        # Workflow guard
+        correction = None
         guard = check_workflow_guard(case, proposal, tool_registry, guard_state)
         if guard.escalation_reason:
             return force_escalate(case, guard.escalation_reason)
         if not guard.allowed:
             correction = guard.correction
             continue
-
-        outcome = run_accepted_action(
-            case,
-            proposal,
-            tool_registry,
-            retry_penalty,
-            event_log,
-        )
+        
+        # Execute accepted proposal:
+        outcome = run_accepted_action(case,proposal,tool_registry,retry_penalty,event_log)
         if outcome.continue_loop:
             continue
         return outcome.message or ""
