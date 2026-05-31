@@ -16,9 +16,7 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_temperature: float | None = None
 
-    # Tunable knobs / list prices — safe defaults are fine here.
+    # Tunable knob — safe default is fine here.
     confidence_retry_penalty: float = 0.15
-    llm_prompt_cost_per_1k: float = 0.00015
-    llm_completion_cost_per_1k: float = 0.0006
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

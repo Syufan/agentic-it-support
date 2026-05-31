@@ -5,8 +5,6 @@ _ENV_VARS = (
     "LLM_MODEL",
     "LLM_TEMPERATURE",
     "CONFIDENCE_RETRY_PENALTY",
-    "LLM_PROMPT_COST_PER_1K",
-    "LLM_COMPLETION_COST_PER_1K",
 )
 
 
@@ -18,8 +16,6 @@ def test_defaults(monkeypatch):
     assert s.llm_model == ""
     assert s.llm_temperature is None
     assert s.confidence_retry_penalty == 0.15
-    assert s.llm_prompt_cost_per_1k == 0.00015
-    assert s.llm_completion_cost_per_1k == 0.0006
 
 
 def test_env_override(monkeypatch):
