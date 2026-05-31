@@ -1,8 +1,7 @@
 import pytest
 
-from agent.parser import parse_proposal
+from agent.parser import ProposalParseError, parse_proposal
 from agent.proposals import AgentAction
-from llm.client import LLMResponseError
 
 
 def test_parse_valid_proposal():
@@ -13,10 +12,10 @@ def test_parse_valid_proposal():
 
 
 def test_parse_non_json_raises():
-    with pytest.raises(LLMResponseError, match="non-JSON"):
+    with pytest.raises(ProposalParseError, match="non-JSON"):
         parse_proposal("not json at all")
 
 
 def test_parse_schema_mismatch_raises():
-    with pytest.raises(LLMResponseError, match="AgentProposal"):
+    with pytest.raises(ProposalParseError, match="AgentProposal"):
         parse_proposal('{"ok": true}')

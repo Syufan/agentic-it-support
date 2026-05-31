@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from config.settings import Settings
 from llm.client import BaseLLMClient, LLMClientError
+from agent.parser import ProposalParseError
 from agent.proposals import AgentAction, AgentProposal
 from runtime.constants import CONFIDENCE_HIGH
 from observability.logger import (
@@ -66,7 +67,7 @@ def run_turn(
         correction = None
         try:
             proposal = llm.call(llm_input)
-        except LLMClientError:
+        except (LLMClientError, ProposalParseError):
             return _force_escalate(case, "LLM provider error during investigation")
 
         _record_llm_stats(case, llm, event_log)
