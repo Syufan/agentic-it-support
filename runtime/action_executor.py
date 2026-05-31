@@ -16,15 +16,8 @@ from runtime.transitions import TransitionResult, evaluate_transition
 from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
-
-@dataclass
-class ActionOutcome:
-    continue_loop: bool
-    message: str | None = None
-
-
-# Single source for the handoff wording, shared by every escalation path so the
-# three of them can't drift apart.
+# Single source for the handoff wording, shared by the escalation and terminal
+# paths so the copies can't drift apart.
 _HANDOFF_TAIL = (
     "I'm connecting you with an IT specialist who will have all the context — "
     "you won't need to repeat yourself."
@@ -32,12 +25,20 @@ _HANDOFF_TAIL = (
 _GENERIC_HANDOFF = f"I wasn't able to fully resolve this issue. {_HANDOFF_TAIL}"
 
 
+# ── 1. Public API / outcome contract ──────────────────────────────────────────
+
+@dataclass
+class ActionOutcome:
+    continue_loop: bool
+    message: str | None = None
+
+
 def run_accepted_action(
     case: CaseState,
     proposal: AgentProposal,
     tool_registry: dict[str, BaseTool],
     retry_penalty: float,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> ActionOutcome:
     _project_to_state(case, proposal)
     case.confidence = compute_confidence(case, retry_penalty)
@@ -50,20 +51,19 @@ def run_accepted_action(
 
 def ask_for_issue_description(
     case: CaseState,
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ) -> str:
     previous_phase = case.phase
     case.phase = Phase.CLARIFYING
     case.missing_info = ["issue description"]
     case.clarification_attempts += 1
-    if event_log:
-        record_phase_transition(
-            event_log,
-            case.case_id,
-            case.confidence,
-            previous_phase.value,
-            case.phase.value,
-        )
+    record_phase_transition(
+        event_log,
+        case.case_id,
+        case.confidence,
+        previous_phase.value,
+        case.phase.value,
+    )
 
     message = (
         "What IT issue are you running into? "
@@ -76,7 +76,7 @@ def ask_for_issue_description(
 def force_escalate(
     case: CaseState,
     reason: str,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> str:
     """Runtime-initiated handoff: build context, hand off, and close — recording
     the escalation. Used both when the runtime gives up (budget / provider / loop
@@ -88,34 +88,33 @@ def force_escalate(
     _build_escalation_context(case, reason, case.confidence)
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
-    if event_log:
-        record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
+    record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
     _apply_transition(case, evaluate_transition(case, AgentAction.ESCALATE))
-    if event_log:
-        _record_phase_if_changed(case, previous_phase, event_log)
+    _record_phase_if_changed(case, previous_phase, event_log)
     case.conversation.append({"role": "assistant", "content": _GENERIC_HANDOFF})
     return _GENERIC_HANDOFF
 
+
+# ── 2. Action handlers ─────────────────────────────────────────────────────────
 
 def _run_tool_action(
     case: CaseState,
     proposal: AgentProposal,
     tool_registry: dict[str, BaseTool],
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ) -> ActionOutcome:
     case.clarification_attempts = 0
     _execute_tool(case, proposal, tool_registry)
-    if event_log:
-        last_trace = case.tool_traces[-1]
-        record_tool_call(
-            event_log,
-            case.case_id,
-            case.phase.value,
-            case.confidence,
-            tool_name=last_trace.tool_name,
-            success=last_trace.success,
-            inputs=last_trace.inputs,
-        )
+    last_trace = case.tool_traces[-1]
+    record_tool_call(
+        event_log,
+        case.case_id,
+        case.phase.value,
+        case.confidence,
+        tool_name=last_trace.tool_name,
+        success=last_trace.success,
+        inputs=last_trace.inputs,
+    )
 
     prev_phase = case.phase
     _apply_transition(case, evaluate_transition(case, AgentAction.CALL_TOOL))
@@ -126,7 +125,7 @@ def _run_tool_action(
 def _run_terminal_action(
     case: CaseState,
     proposal: AgentProposal,
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ) -> ActionOutcome:
     prev_phase = case.phase
 
@@ -137,14 +136,13 @@ def _run_terminal_action(
         _build_escalation_context(case, proposal.escalation_reason, case.confidence)
         case.handoff_completed = True
         case.phase = Phase.ESCALATING
-        if event_log:
-            record_escalation(
-                event_log,
-                case.case_id,
-                case.phase.value,
-                case.confidence,
-                proposal.escalation_reason or "",
-            )
+        record_escalation(
+            event_log,
+            case.case_id,
+            case.phase.value,
+            case.confidence,
+            proposal.escalation_reason or "",
+        )
 
     _apply_transition(case, evaluate_transition(case, proposal.action))
     _record_phase_if_changed(case, prev_phase, event_log)
@@ -167,6 +165,8 @@ def _run_terminal_action(
     case.conversation.append({"role": "assistant", "content": response})
     return ActionOutcome(continue_loop=False, message=response)
 
+
+# ── 3. Terminal helpers ────────────────────────────────────────────────────────
 
 def _track_clarification_attempt(case: CaseState, proposal: AgentProposal) -> None:
     """Count consecutive unproductive clarifying turns; reset to zero the moment the
@@ -203,11 +203,23 @@ def _soft_close(case: CaseState) -> str:
     return msg
 
 
-def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
-    case.missing_info = list(proposal.missing_info)
-    if proposal.user_confirmed_resolution is not None:
-        case.user_confirmed_resolution = proposal.user_confirmed_resolution
+def _format_response(proposal: AgentProposal, confidence: float) -> str:
+    if proposal.action == AgentAction.ESCALATE:
+        reason = (proposal.escalation_reason or "").strip()
+        if reason:
+            return f"{reason} {_HANDOFF_TAIL}"
+        return _GENERIC_HANDOFF
 
+    if proposal.action == AgentAction.RESOLVE:
+        message = proposal.message or ""
+        if confidence >= CONFIDENCE_HIGH:
+            return f"I found a likely fix for your issue: {message}"
+        return f"I'm not fully certain, but this is a safe first step to try: {message}"
+
+    return proposal.message or ""
+
+
+# ── 4. Tool execution helpers ──────────────────────────────────────────────────
 
 def _execute_tool(
     case: CaseState,
@@ -239,6 +251,14 @@ def _execute_tool(
     case.tool_calls_total += 1
 
 
+# ── 5. State / transition helpers ──────────────────────────────────────────────
+
+def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
+    case.missing_info = list(proposal.missing_info)
+    if proposal.user_confirmed_resolution is not None:
+        case.user_confirmed_resolution = proposal.user_confirmed_resolution
+
+
 def _apply_transition(case: CaseState, result: TransitionResult) -> None:
     case.phase = result.next_phase
 
@@ -246,9 +266,9 @@ def _apply_transition(case: CaseState, result: TransitionResult) -> None:
 def _record_phase_if_changed(
     case: CaseState,
     previous_phase: Phase,
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ) -> None:
-    if event_log and case.phase != previous_phase:
+    if case.phase != previous_phase:
         record_phase_transition(
             event_log,
             case.case_id,
@@ -257,6 +277,8 @@ def _record_phase_if_changed(
             case.phase.value,
         )
 
+
+# ── 6. Escalation helpers ──────────────────────────────────────────────────────
 
 def _build_escalation_context(
     case: CaseState,
@@ -285,19 +307,3 @@ def _build_escalation_context(
         "failed_resolutions": list(case.failed_resolutions),
         "resolution_attempts": case.resolution_attempts,
     }
-
-
-def _format_response(proposal: AgentProposal, confidence: float) -> str:
-    if proposal.action == AgentAction.ESCALATE:
-        reason = (proposal.escalation_reason or "").strip()
-        if reason:
-            return f"{reason} {_HANDOFF_TAIL}"
-        return _GENERIC_HANDOFF
-
-    if proposal.action == AgentAction.RESOLVE:
-        message = proposal.message or ""
-        if confidence >= CONFIDENCE_HIGH:
-            return f"I found a likely fix for your issue: {message}"
-        return f"I'm not fully certain, but this is a safe first step to try: {message}"
-
-    return proposal.message or ""

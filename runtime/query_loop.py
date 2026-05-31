@@ -39,8 +39,10 @@ def run_turn(
     case.conversation.append({"role": "user", "content": user_message})
     case.tool_calls_this_turn = 0
 
-    if event_log:
-        record_turn_start(event_log, case.case_id, case.phase.value, case.confidence)
+    # main.py and cli.py both inject an event log; default a throwaway one for the
+    # remaining callers (evaluation, tests) so the recording paths never branch on None.
+    event_log = event_log or InMemoryEventLog()
+    record_turn_start(event_log, case.case_id, case.phase.value, case.confidence)
 
     if needs_issue_description(case, user_message):
         return ask_for_issue_description(case, event_log)
@@ -85,7 +87,7 @@ def _call_agent(
     case: CaseState,
     correction: str | None,
     llm: BaseLLMClient,
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ):
     llm_input = build_messages(case, correction=correction)
     proposal = llm.call(llm_input)
@@ -102,10 +104,10 @@ def _raise_if_cancelled(should_cancel: Callable[[], bool] | None) -> None:
 def _record_llm_stats(
     case: CaseState,
     llm: BaseLLMClient,
-    event_log: InMemoryEventLog | None,
+    event_log: InMemoryEventLog,
 ) -> None:
     stats = getattr(llm, "last_stats", None)
-    if stats is None or event_log is None:
+    if stats is None:
         return
     record_llm_call(
         event_log,
