@@ -20,7 +20,6 @@ class AgentProposal(BaseModel):
     """
 
     action: AgentAction
-    confidence: float = Field(ge=0.0, le=1.0)
     reasoning_summary: str
 
     # User communication

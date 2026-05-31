@@ -13,7 +13,6 @@ Respond with a single JSON object and nothing else:
 ```json
 {
   "action": "escalate",
-  "confidence": 0.0–1.0,
   "reasoning_summary": "why you are escalating",
   "escalation_reason": "one short, plain sentence the employee can read explaining why this needs a human (the full context is captured separately)"
 }

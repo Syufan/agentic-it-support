@@ -140,9 +140,10 @@ def test_resolve_allowed_when_tools_called_even_with_low_confidence():
 # ── high-confidence resolve guard ────────────────────────────────────────────
 
 def test_high_confidence_resolve_blocked_with_single_user_turn_and_one_tool():
-    case = _case(tool_calls_total=1)
+    # guard reads runtime-computed case.confidence (set directly here)
+    case = _case(tool_calls_total=1, confidence=0.9)
     case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
+    proposal = _proposal(action=AgentAction.RESOLVE, message="Try this")
     decision = check(case, proposal)
     assert not decision.allowed
     assert "insufficient investigation" in decision.reason

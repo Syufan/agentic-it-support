@@ -189,7 +189,7 @@ def check_diagnosis_policy(
                 "resolve blocked: ground the diagnosis in at least one tool lookup before resolving",
                 "Ground the diagnosis in at least one tool lookup before resolving.",
             )
-        if proposal.confidence >= CONFIDENCE_HIGH:
+        if case.confidence >= CONFIDENCE_HIGH:
             user_turns = sum(1 for m in case.conversation if m["role"] == "user")
             if user_turns <= 1 and case.tool_calls_total < 2:
                 return DiagnosisPolicyDecision(

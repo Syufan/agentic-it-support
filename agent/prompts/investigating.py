@@ -31,7 +31,6 @@ Respond with a single JSON object and nothing else:
 ```json
 {
   "action": "call_tool" | "resolve" | "escalate" | "ask_user",
-  "confidence": 0.0–1.0,
   "reasoning_summary": "brief explanation of your reasoning",
 
   // if action = call_tool

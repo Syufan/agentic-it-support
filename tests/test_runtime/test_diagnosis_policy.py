@@ -131,11 +131,12 @@ def test_resolve_blocked_without_tool_evidence():
 
 
 def test_high_confidence_resolve_needs_user_clarification_or_multiple_tools():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1)
+    # the guard reads the runtime-computed case.confidence (set directly here)
+    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1, confidence=0.9)
     case.conversation = [{"role": "user", "content": "VPN broken"}]
     decision = check_diagnosis_policy(
         case,
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
+        _proposal(action=AgentAction.RESOLVE, message="Try this"),
     )
     assert decision.allowed is False
     assert "insufficient investigation" in decision.reason

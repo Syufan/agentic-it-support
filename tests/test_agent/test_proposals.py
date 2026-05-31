@@ -1,6 +1,3 @@
-import pytest
-from pydantic import ValidationError
-
 from agent.proposals import AgentAction, AgentProposal
 
 
@@ -54,24 +51,9 @@ def test_escalate_decision():
 
 # ── confidence validation ─────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("confidence", [0.0, 0.5, 1.0])
-def test_confidence_valid_boundaries(confidence):
-    d = AgentProposal(
-        action=AgentAction.RESOLVE,
-        confidence=confidence,
-        reasoning_summary="test",
-    )
-    assert d.confidence == confidence
-
-
-@pytest.mark.parametrize("confidence", [-0.1, 1.1, 2.0])
-def test_confidence_out_of_range_rejected(confidence):
-    with pytest.raises(ValidationError):
-        AgentProposal(
-            action=AgentAction.RESOLVE,
-            confidence=confidence,
-            reasoning_summary="test",
-        )
+def test_confidence_is_not_a_proposal_field():
+    # confidence is runtime-owned (evidence-based); the LLM no longer reports it
+    assert "confidence" not in AgentProposal.model_fields
 
 
 # ── user_confirmed_resolution ─────────────────────────────────────────────────
@@ -156,10 +138,9 @@ def test_parse_ignores_unknown_runtime_owned_fields():
 def test_serialize_to_json():
     d = AgentProposal(
         action=AgentAction.ESCALATE,
-        confidence=0.2,
         reasoning_summary="Out of scope",
         escalation_reason="Requires hardware replacement",
     )
     data = d.model_dump()
     assert data["action"] == AgentAction.ESCALATE
-    assert data["confidence"] == 0.2
+    assert data["escalation_reason"] == "Requires hardware replacement"

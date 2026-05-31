@@ -13,7 +13,6 @@ Respond with a single JSON object and nothing else:
 ```json
 {
   "action": "resolve" | "ask_user",
-  "confidence": 0.0–1.0,
   "reasoning_summary": "brief explanation of your reasoning",
   "message": "response or follow-up message to the employee",
   "user_confirmed_resolution": true | false | null

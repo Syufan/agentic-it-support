@@ -15,7 +15,7 @@ from observability.logger import (
     record_turn_start,
 )
 from policy.engine import check_business_policy
-from runtime.calibration import calibrate
+from runtime.confidence import compute_confidence
 from runtime.diagnosis_policy import (
     check_diagnosis_policy,
     has_usable_issue_description,
@@ -122,7 +122,7 @@ def run_turn(
             continue
 
         _project_to_state(case, proposal)
-        case.confidence = calibrate(proposal.confidence, case, retry_penalty)
+        case.confidence = compute_confidence(case, retry_penalty)
 
         if proposal.action == AgentAction.CALL_TOOL:
             case.clarification_attempts = 0  # investigating is progress
@@ -149,7 +149,7 @@ def run_turn(
             case.resolution_attempts += 1
 
         if proposal.action == AgentAction.ESCALATE:
-            _build_escalation_context(case, proposal.escalation_reason, proposal.confidence)
+            _build_escalation_context(case, proposal.escalation_reason, case.confidence)
             case.handoff_completed = True
             # a completed handoff is terminal from any phase: go to ESCALATING so the
             # transition rules close the case (T14), not back to investigating
@@ -389,8 +389,8 @@ def _format_response(proposal: AgentProposal, confidence: float) -> str:
 
     if proposal.action == AgentAction.RESOLVE:
         message = proposal.message or ""
-        # use the runtime's calibrated confidence so the wording the employee
-        # sees matches the confidence the runtime actually acted on
+        # use the runtime's computed confidence so the wording the employee sees
+        # matches the confidence the runtime actually acted on
         if confidence >= CONFIDENCE_HIGH:
             return f"I found a likely fix for your issue: {message}"
         return f"I'm not fully certain, but this is a safe first step to try: {message}"
