@@ -59,7 +59,7 @@ def run_turn(
             proposal = _call_agent(case, correction, llm, event_log)
         except (LLMClientError, ProposalParseError):
             return force_escalate(case, "LLM provider error during investigation")
-        
+
         # Interrupt
         _raise_if_cancelled(should_cancel)
 

@@ -103,33 +103,31 @@ def test_investigating_allows_all_actions(action, extra):
 @pytest.mark.parametrize("action,extra", [
     (AgentAction.RESOLVE, {"message": "Try this."}),
     (AgentAction.ASK_USER, {"message": "Did it work?"}),
+    # A resolution attempt can reveal the fix is unsafe/beyond self-service, so the
+    # agent may bail to handoff from RESOLVING (diagnosis_policy still gates the reason).
+    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
 ])
-def test_resolving_allows_resolve_and_ask_user(action, extra):
+def test_resolving_allows_resolve_ask_user_and_escalate(action, extra):
     result = validate_proposal(case_in(Phase.RESOLVING), proposal(action=action, **extra))
     assert result.valid is True
 
-@pytest.mark.parametrize("action,extra", [
-    (AgentAction.CALL_TOOL, {"tool_name": "kb_search", "tool_input": {"query": "vpn"}}),
-    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
-])
-def test_resolving_rejects_call_tool_and_escalate(action, extra):
-    result = validate_proposal(case_in(Phase.RESOLVING), proposal(action=action, **extra))
+def test_resolving_rejects_call_tool():
+    result = validate_proposal(
+        case_in(Phase.RESOLVING),
+        proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
+    )
     assert result.valid is False
 
 
-def test_escalating_allows_escalate():
-    result = validate_proposal(
-        case_in(Phase.ESCALATING),
-        proposal(action=AgentAction.ESCALATE, escalation_reason="needs admin"),
-    )
-    assert result.valid is True
-
+# ESCALATING is runtime-terminal: the runtime executes the handoff and closes the
+# case in-turn, so the LLM has no valid move here (mirrors CLOSED).
 @pytest.mark.parametrize("action,extra", [
     (AgentAction.ASK_USER, {"message": "What OS?"}),
     (AgentAction.CALL_TOOL, {"tool_name": "kb_search", "tool_input": {"query": "vpn"}}),
     (AgentAction.RESOLVE, {"message": "Try this."}),
+    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
 ])
-def test_escalating_rejects_other_actions(action, extra):
+def test_escalating_rejects_all_actions(action, extra):
     result = validate_proposal(case_in(Phase.ESCALATING), proposal(action=action, **extra))
     assert result.valid is False
 

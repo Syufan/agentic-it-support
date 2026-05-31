@@ -8,8 +8,8 @@ _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
     Phase.INTAKE:        {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
     Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.ESCALATE},
     Phase.INVESTIGATING: {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.RESOLVE, AgentAction.ESCALATE},
-    Phase.RESOLVING:     {AgentAction.RESOLVE, AgentAction.ASK_USER},
-    Phase.ESCALATING:    {AgentAction.ESCALATE},
+    Phase.RESOLVING:     {AgentAction.RESOLVE, AgentAction.ASK_USER, AgentAction.ESCALATE},
+    Phase.ESCALATING:    set(),
     Phase.CLOSED:        set(),
 }
 
@@ -41,6 +41,9 @@ def validate_proposal(
                 return ValidationResult(False, "call_tool requires tool_name")
             if proposal.tool_name not in valid_tools:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
+            # Tool-call ceilings are expressed as a (correctable) invalid proposal:
+            # the workflow guard re-prompts the agent to resolve/escalate with what it
+            # has, rather than the runtime hard-escalating the case on the spot.
             if limits.tool_turn_limit_reached(case):
                 return ValidationResult(False, "turn tool-call limit reached")
             if limits.tool_case_limit_reached(case):
