@@ -1,6 +1,6 @@
 import time
 
-from observability.spinner import Spinner, format_waiting_line
+from cli import Spinner, format_waiting_line
 
 
 # ── format_waiting_line (pure function) ───────────────────────────────────────

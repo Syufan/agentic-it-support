@@ -7,8 +7,7 @@ from collections.abc import Callable
 from agent.parser import parse_proposal
 from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
-from observability.logger import InMemoryEventLog
-from observability.spinner import Spinner
+from observability.event_tracing import InMemoryEventLog
 from runtime.controller import TurnCancelled, run_turn
 from runtime import budget as budget_
 from state.case_state import CaseState, Phase
@@ -39,6 +38,52 @@ def typewrite(
         writer(char)
         if delay:
             time.sleep(delay)
+
+
+# ── thinking spinner (terminal UI) ────────────────────────────────────────────
+
+_SPINNER_FRAMES = ("●", "○")
+_SPINNER_CLEAR = "\r" + " " * 80 + "\r"
+
+
+def format_waiting_line(frame_idx: int, elapsed: float, phase: str) -> str:
+    frame = _SPINNER_FRAMES[frame_idx % len(_SPINNER_FRAMES)]
+    return f"\r{frame} thinking... {elapsed:.1f}s  [phase: {phase}]  (ESC to cancel)"
+
+
+class Spinner:
+    def __init__(
+        self,
+        get_phase: Callable[[], str],
+        writer: Callable[[str], None],
+        interval: float = 0.6,
+    ) -> None:
+        self._get_phase = get_phase
+        self._writer = writer
+        self._interval = interval
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._start_time: float = 0.0
+
+    def start(self) -> None:
+        self._running = True
+        self._start_time = time.monotonic()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=1.0)
+        self._writer(_SPINNER_CLEAR)
+
+    def _run(self) -> None:
+        idx = 0
+        while self._running:
+            elapsed = time.monotonic() - self._start_time
+            self._writer(format_waiting_line(idx, elapsed, self._get_phase()))
+            time.sleep(self._interval)
+            idx += 1
 
 
 def run_cli_session(

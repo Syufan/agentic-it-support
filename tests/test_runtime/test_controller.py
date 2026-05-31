@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from observability.logger import InMemoryEventLog
+from observability.event_tracing import InMemoryEventLog
 from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import BudgetMode, CaseState, Phase, ToolTrace

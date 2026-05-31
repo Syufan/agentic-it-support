@@ -6,7 +6,7 @@ from llm.client import BaseLLMClient, LLMClientError
 from agent.parser import ProposalParseError
 from agent.proposals import AgentAction, AgentProposal
 from runtime.constants import CONFIDENCE_HIGH
-from observability.logger import (
+from observability.event_tracing import (
     InMemoryEventLog,
     record_escalation,
     record_llm_call,

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from llm.client import MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
-from observability.logger import Event, InMemoryEventLog
+from observability.event_tracing import Event, InMemoryEventLog
 from runtime.controller import run_turn
 from state.case_state import CaseState, Phase
 from tools.base import BaseTool, ToolResult
