@@ -9,11 +9,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Deployment choices — no hardcoded default; .env (LLM_API_KEY / LLM_MODEL)
+    # is the source of truth. Empty means "must be provided to make real calls".
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini-2024-07-18"
+    llm_model: str = ""
 
+    # Tunable knobs / list prices — safe defaults are fine here.
     confidence_retry_penalty: float = 0.15
-
     llm_prompt_cost_per_1k: float = 0.00015
     llm_completion_cost_per_1k: float = 0.0006
 

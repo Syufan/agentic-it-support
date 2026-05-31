@@ -14,7 +14,7 @@ def test_defaults(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     s = Settings(_env_file=None)
     assert s.llm_api_key == ""
-    assert s.llm_model == "gpt-4o-mini-2024-07-18"
+    assert s.llm_model == ""
     assert s.confidence_retry_penalty == 0.15
     assert s.llm_prompt_cost_per_1k == 0.00015
     assert s.llm_completion_cost_per_1k == 0.0006
