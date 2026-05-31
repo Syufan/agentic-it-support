@@ -5,7 +5,7 @@ Compile a complete escalation package from the case state so the human specialis
 - Summarise the issue as described by the employee
 - List all steps taken and tools checked
 - State what was found and what was not resolved
-- Include your confidence score and why you are escalating
+- Explain why you are escalating
 
 ## Output format
 Respond with a single JSON object and nothing else:
