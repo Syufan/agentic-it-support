@@ -65,19 +65,19 @@ def test_empty_conversation_still_produces_messages():
 
 # ── correction feedback ───────────────────────────────────────────────────────
 
-def test_correction_is_included_in_messages():
+def test_correction_is_included_in_system_prompt():
     case = CaseState()
     case.conversation = [{"role": "user", "content": "VPN broken"}]
     result = build_messages(case, correction="resolve blocked: investigate first")
-    full_text = " ".join(m["content"] for m in result.messages)
-    assert "resolve blocked: investigate first" in full_text
+    assert "resolve blocked: investigate first" in result.system
+    assert "[Correction]" in result.system
 
 
 def test_no_correction_section_by_default():
     case = CaseState()
     case.conversation = [{"role": "user", "content": "VPN broken"}]
     result = build_messages(case)
-    full_text = " ".join(m["content"] for m in result.messages)
+    full_text = result.system + " ".join(m["content"] for m in result.messages)
     assert "Correction" not in full_text
 
 
