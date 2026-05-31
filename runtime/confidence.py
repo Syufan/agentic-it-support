@@ -4,13 +4,14 @@ Replaces the old LLM-self-reported confidence: the runtime derives a grounded
 estimate from what it can actually verify — the distinct tools that returned a
 successful result — and discounts it for each resolution that did not stick.
 
-Capped below CONFIDENCE_HIGH on purpose: evidence alone never auto-resolves;
-how the state machine consumes this value is a separate concern.
+Evidence alone never auto-resolves: RESOLVING is entered by the RESOLVE *action*,
+not by crossing a confidence threshold. The runtime gates that action on this value
+(CONFIDENCE_RESOLVE_MIN), so confidence authorizes a fix rather than triggering one.
 """
 
 from state.case_state import CaseState
 
-#: evidence ceiling — gathered evidence alone tops out here (< CONFIDENCE_HIGH)
+#: evidence ceiling — gathered evidence alone tops out here
 _EVIDENCE_CAP = 0.7
 #: confidence contributed per distinct successful tool source
 _PER_SOURCE = 0.35

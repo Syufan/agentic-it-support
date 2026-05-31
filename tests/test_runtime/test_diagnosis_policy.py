@@ -89,26 +89,24 @@ def test_escalation_allowed_for_direct_handoff_reason():
     assert check_diagnosis_policy(case, proposal).allowed
 
 
-def test_resolve_blocked_without_tool_evidence():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=0)
+def test_resolve_blocked_without_evidence():
+    # no successful tool source → confidence 0 → below the resolve bar → blocked
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.0)
     decision = check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, confidence=0.7, message="Try this"),
     )
     assert decision.allowed is False
-    assert "tool lookup" in decision.reason
+    assert "resolve threshold" in decision.reason
 
 
-def test_high_confidence_resolve_needs_user_clarification_or_multiple_tools():
-    # the guard reads the runtime-computed case.confidence (set directly here)
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1, confidence=0.9)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    decision = check_diagnosis_policy(
+def test_resolve_allowed_with_sufficient_confidence():
+    # confidence at/above the bar (≈ one successful source) authorizes the fix
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    assert check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, message="Try this"),
-    )
-    assert decision.allowed is False
-    assert "insufficient investigation" in decision.reason
+    ).allowed
 
 
 def test_tool_case_limit_reached_blocks_ordinary_clarifying_question():
@@ -125,6 +123,7 @@ def test_tool_case_limit_reached_allows_resolution_or_escalation_not_more_tools_
     case = _case(
         phase=Phase.INVESTIGATING,
         tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
+        confidence=0.6,  # evidence gathered → resolve is authorized
     )
     assert check_diagnosis_policy(
         case,

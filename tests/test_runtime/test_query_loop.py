@@ -154,15 +154,13 @@ def test_phase_transitions_to_clarifying_when_missing_user_info():
     assert case.phase == Phase.CLARIFYING
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Evidence-based confidence caps at 0.7 < CONFIDENCE_HIGH(0.8), so T4 "
-    "(confidence->RESOLVING) is unreachable. Restored next round when the state "
-    "machine makes RESOLVE drive RESOLVING. See state-machine memory.",
-)
-def test_phase_transitions_to_resolving_after_high_confidence_resolve():
+def test_resolve_action_drives_resolving():
+    # Model B: the RESOLVE action drives RESOLVING once the evidence gate is cleared
+    # (one successful source → confidence 0.35).
     case = _case_after_clarification()
-    case.tool_calls_total = 1  # investigation already happened
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True)]
+    case.tool_calls_total = 1
+    case.confidence = 0.35
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, message="Try this"),
     ]), {})
@@ -190,13 +188,9 @@ def test_tool_call_then_resolve_in_one_turn():
     assert "Restart VPN client" in response
 
 
-@pytest.mark.xfail(
-    reason="T9 (safe-guidance-at-tool-limit) temporarily unreachable: has_safe_low_risk_guidance "
-    "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
-    "agent-proposal-degovernance memory.",
-    strict=True,
-)
-def test_final_tool_call_gets_synthesis_chance_before_tool_limit_escalation():
+def test_final_tool_call_resolves_with_gathered_evidence():
+    # the last allowed tool call yields a successful source, so the agent may resolve
+    # with what it has rather than being forced to escalate at the budget edge.
     case = CaseState(
         phase=Phase.INVESTIGATING,
         confidence=0.6,
@@ -214,7 +208,6 @@ def test_final_tool_call_gets_synthesis_chance_before_tool_limit_escalation():
             action=AgentAction.RESOLVE,
             confidence=0.7,
             message="Try switching VPN servers, then reconnect and test another external website.",
-            has_safe_low_risk_guidance=True,
         ),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["vpn troubleshooting guide"]}))
@@ -226,13 +219,9 @@ def test_final_tool_call_gets_synthesis_chance_before_tool_limit_escalation():
     assert case.escalation_context == {}
 
 
-@pytest.mark.xfail(
-    reason="T9 (safe-guidance-at-tool-limit) temporarily unreachable: has_safe_low_risk_guidance "
-    "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
-    "agent-proposal-degovernance memory.",
-    strict=True,
-)
 def test_tool_case_limit_reached_question_retries_to_resolution():
+    # at the tool-call budget, an ordinary clarifying question is blocked; with evidence
+    # already gathered (confidence 0.6) the agent retries into a resolution.
     case = CaseState(
         phase=Phase.INVESTIGATING,
         confidence=0.6,
@@ -247,7 +236,6 @@ def test_tool_case_limit_reached_question_retries_to_resolution():
         action=AgentAction.RESOLVE,
         confidence=0.6,
         message="Try switching VPN servers, reconnect, and test another external site.",
-        has_safe_low_risk_guidance=True,
     )
 
     response = run_turn(case, "still cannot access google", MockLLMClient([ask_again, resolve]), {})
@@ -314,7 +302,10 @@ def _failing_proposals() -> list:
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
                   message=None),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
+        # the failed tool yields no successful source, so confidence stays below the
+        # resolve bar; the agent ends the turn by asking the user (these tests assert
+        # on the recorded failure, not on resolving).
+        _proposal(action=AgentAction.ASK_USER, confidence=0.6, message="What error do you see?"),
     ]
 
 def test_failed_tool_trace_has_success_false():
@@ -343,7 +334,9 @@ def test_failed_tool_result_not_stored_in_facts():
 
 def test_resolve_increments_resolution_attempts():
     case = _case_after_clarification()
-    case.tool_calls_total = 1  # investigation already happened
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True)]
+    case.tool_calls_total = 1  # investigation already happened (one successful source)
+    case.confidence = 0.35
     run_turn(case, "Still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
     ]), {})
@@ -490,7 +483,14 @@ def test_runtime_tool_limit_escalation_builds_handoff_context():
 )
 def test_high_confidence_resolve_has_confident_prefix():
     case = _case_after_clarification()
-    case.tool_calls_total = 1  # investigation already happened
+    # even at the evidence ceiling (two successful sources → 0.7) the wording stays
+    # hedged because the confident prefix keys off CONFIDENCE_HIGH (0.8).
+    case.tool_traces = [
+        ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True),
+        ToolTrace(tool_name="status_api", inputs={}, output={}, success=True),
+    ]
+    case.tool_calls_total = 2
+    case.confidence = 0.7
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, message="Restart VPN client."),
     ]), {})
@@ -499,7 +499,9 @@ def test_high_confidence_resolve_has_confident_prefix():
 
 def test_medium_confidence_resolve_has_hedging_prefix():
     case = CaseState(phase=Phase.INVESTIGATING)
-    case.tool_calls_total = 1  # investigation already happened
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True)]
+    case.tool_calls_total = 1  # one successful source → confidence 0.35 (< HIGH → hedged)
+    case.confidence = 0.35
     response = run_turn(case, "VPN broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try restarting."),
     ]), {})
@@ -507,11 +509,13 @@ def test_medium_confidence_resolve_has_hedging_prefix():
     assert "Try restarting" in response
 
 def test_resolve_prefix_hedged_when_confidence_low():
-    # low/no tool evidence -> low computed confidence -> hedged wording, no matter
+    # evidence clears the resolve bar but stays below HIGH → hedged wording, no matter
     # what the model might have thought.
     case = _case_after_clarification()
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True)]
     case.tool_calls_total = 2
     case.resolution_attempts = 1
+    case.confidence = 0.35
     response = run_turn(case, "still broken", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, message="Reinstall the client."),
     ]), {})
@@ -544,6 +548,7 @@ def test_confidence_is_evidence_based_not_from_proposal():
         ToolTrace(tool_name="status_api", inputs={}, output={}, success=True),
     ]
     case.tool_calls_total = 2
+    case.confidence = 0.7  # already reflects the two sources (clears the resolve gate)
     run_turn(case, "msg", MockLLMClient([
         _proposal(action=AgentAction.RESOLVE, message="Fix"),
     ]), {})

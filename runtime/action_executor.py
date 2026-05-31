@@ -41,11 +41,14 @@ def run_accepted_action(
     event_log: InMemoryEventLog,
 ) -> ActionOutcome:
     _project_to_state(case, proposal)
-    case.confidence = compute_confidence(case, retry_penalty)
 
+    # Confidence is evidence-based, so it must be computed AFTER a tool runs (the new
+    # source has to count). For terminal actions there's no new evidence this step, so
+    # compute from the traces already on the case.
     if proposal.action == AgentAction.CALL_TOOL:
-        return _run_tool_action(case, proposal, tool_registry, event_log)
+        return _run_tool_action(case, proposal, tool_registry, retry_penalty, event_log)
 
+    case.confidence = compute_confidence(case, retry_penalty)
     return _run_terminal_action(case, proposal, event_log)
 
 
@@ -101,10 +104,12 @@ def _run_tool_action(
     case: CaseState,
     proposal: AgentProposal,
     tool_registry: dict[str, BaseTool],
+    retry_penalty: float,
     event_log: InMemoryEventLog,
 ) -> ActionOutcome:
     case.clarification_attempts = 0
     _execute_tool(case, proposal, tool_registry)
+    case.confidence = compute_confidence(case, retry_penalty)  # reflect the new source
     last_trace = case.tool_traces[-1]
     record_tool_call(
         event_log,

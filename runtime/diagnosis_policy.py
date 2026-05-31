@@ -17,7 +17,7 @@ import re
 
 from agent.proposals import AgentAction, AgentProposal
 from runtime import limits
-from runtime.constants import CONFIDENCE_HIGH
+from runtime.constants import CONFIDENCE_RESOLVE_MIN
 from state.case_state import CaseState, Phase
 
 
@@ -69,25 +69,19 @@ def check_diagnosis_policy(
                 ),
             )
 
-    # §1 — a resolution must be grounded in tool evidence
-    if proposal.action == AgentAction.RESOLVE:
-        if case.phase != Phase.RESOLVING and case.tool_calls_total == 0:
+    # §1 — a resolution must be grounded in evidence. Confidence is evidence-based
+    # (distinct successful tool sources), so this gate is what authorizes the RESOLVE
+    # action that drives RESOLVING. Already in RESOLVING = confirmation, not re-gated.
+    if proposal.action == AgentAction.RESOLVE and case.phase != Phase.RESOLVING:
+        if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
-                "resolve blocked: ground the diagnosis in at least one tool lookup before resolving",
-                "Ground the diagnosis in at least one tool lookup before resolving.",
+                "resolve blocked: evidence-based confidence below the resolve threshold",
+                (
+                    "Don't propose a fix yet — it isn't grounded in evidence. Call a tool "
+                    "and get a successful result first, then resolve."
+                ),
             )
-        if case.confidence >= CONFIDENCE_HIGH:
-            user_turns = sum(1 for m in case.conversation if m["role"] == "user")
-            if user_turns <= 1 and case.tool_calls_total < 2:
-                return DiagnosisPolicyDecision(
-                    False,
-                    "insufficient investigation: high-confidence resolve requires either user clarification or multiple tool calls",
-                    (
-                        "High-confidence resolution needs stronger evidence. "
-                        "Ask one useful clarifying question or gather another tool result."
-                    ),
-                )
 
     return DiagnosisPolicyDecision(True)
 

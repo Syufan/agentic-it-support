@@ -43,13 +43,19 @@ def typewrite(
 # ── thinking spinner (terminal UI) ────────────────────────────────────────────
 
 _SPINNER_FRAMES = ("●", "○")
-_SPINNER_CLEAR = "\r" + " " * 80 + "\r"
+_SPINNER_CLEAR = "\r\033[2K"
 
 
 def format_waiting_line(frame_idx: int, elapsed: float, phase: str) -> str:
     frame = _SPINNER_FRAMES[frame_idx % len(_SPINNER_FRAMES)]
-    return f"\r{frame} thinking... {elapsed:.1f}s  [phase: {phase}]  (ESC to cancel)"
-
+    text = f"  {frame} thinking... {elapsed:.1f}s  [phase: {phase}]  (ESC to cancel)"
+    try:
+        width = os.get_terminal_size().columns
+    except OSError:
+        width = 80
+    if len(text) >= width:
+        text = text[:width - 1]
+    return "\r\033[2K" + text
 
 class Spinner:
     def __init__(

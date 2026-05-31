@@ -126,47 +126,10 @@ def test_resolve_blocked_when_no_tools_called_even_with_high_confidence():
     assert "resolve blocked" in decision.reason
 
 
-def test_resolve_allowed_when_tools_called_even_with_low_confidence():
-    case = _case(tool_calls_total=2)
+def test_resolve_allowed_once_confidence_clears_the_bar():
+    # Model B: the gate is evidence-based confidence, not the tool-call counter.
+    case = _case(confidence=0.35)
     proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.3, message="Try this")
-    decision = check(case, proposal)
-    assert decision.allowed
-
-
-# ── high-confidence resolve guard ────────────────────────────────────────────
-
-def test_high_confidence_resolve_blocked_with_single_user_turn_and_one_tool():
-    # guard reads runtime-computed case.confidence (set directly here)
-    case = _case(tool_calls_total=1, confidence=0.9)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, message="Try this")
-    decision = check(case, proposal)
-    assert not decision.allowed
-    assert "insufficient investigation" in decision.reason
-
-
-def test_high_confidence_resolve_allowed_after_user_clarification():
-    case = _case(tool_calls_total=1)
-    case.conversation = [
-        {"role": "user", "content": "VPN broken"},
-        {"role": "assistant", "content": "What OS?"},
-        {"role": "user", "content": "macOS"},
-    ]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
-    assert check(case, proposal).allowed
-
-
-def test_high_confidence_resolve_allowed_after_thorough_tool_investigation():
-    case = _case(tool_calls_total=2)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this")
-    assert check(case, proposal).allowed
-
-
-def test_medium_confidence_resolve_not_blocked_by_this_rule():
-    case = _case(tool_calls_total=1)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.65, message="Try this")
     assert check(case, proposal).allowed
 
 

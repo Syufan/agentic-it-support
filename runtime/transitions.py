@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 
 from agent.proposals import AgentAction
-from runtime.constants import CONFIDENCE_HIGH, MAX_RESOLUTION_ATTEMPTS
-from runtime import limits
+from runtime.constants import MAX_RESOLUTION_ATTEMPTS
 from state.case_state import CaseState, Phase
 
 
@@ -49,25 +48,15 @@ def _from_clarifying(action: AgentAction) -> TransitionResult:
 
 
 def _from_investigating(case: CaseState, action: AgentAction) -> TransitionResult:
-    # A tool call keeps us investigating so the LLM can synthesize the result on
-    # the next turn; it short-circuits the confidence/limit guards on purpose.
-    if action == AgentAction.CALL_TOOL:
-        return _result(Phase.INVESTIGATING)                  # T6
-
-    if case.confidence >= CONFIDENCE_HIGH:
-        return _result(Phase.RESOLVING)                      # T4
-
-    if limits.tool_case_limit_reached(case):
-        if case.has_safe_low_risk_guidance:
-            return _result(Phase.RESOLVING)                  # T9
-        if action == AgentAction.ASK_USER:
-            return _result(Phase.CLARIFYING)                 # T7 (tool limit reached)
-        return _result(Phase.ESCALATING)                     # T8
-
+    # Action-driven. Whether the action is *allowed* (tool budget, enough evidence to
+    # resolve) is decided upstream by the validator + diagnosis_policy; here we only
+    # map an accepted action to the next phase. ESCALATE never reaches this function —
+    # action_executor pre-sets ESCALATING for it (see [[action-executor-risk-boundaries]]).
+    if action == AgentAction.RESOLVE:
+        return _result(Phase.RESOLVING)        # T4 — propose a fix, await confirmation
     if action == AgentAction.ASK_USER:
-        return _result(Phase.CLARIFYING)                     # T7
-
-    return _result(Phase.INVESTIGATING)                      # keep investigating
+        return _result(Phase.CLARIFYING)       # T7 — need user-only info
+    return _result(Phase.INVESTIGATING)        # T6 — a tool call (or default) keeps investigating
 
 
 def _from_resolving(case: CaseState) -> TransitionResult:
