@@ -14,7 +14,7 @@ _PROMPTS: dict[Phase, str] = {
 
 #: how many recent tool results to surface to the LLM, and how much of each
 _MAX_TOOL_TRACES_IN_CONTEXT = 3
-_TOOL_OUTPUT_PREVIEW_CHARS = 200
+_TOOL_OUTPUT_PREVIEW_CHARS = 1000
 
 
 def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:

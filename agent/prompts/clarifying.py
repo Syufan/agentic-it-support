@@ -10,7 +10,8 @@ If the employee has named an app/service and described a symptom, stop asking
 pre-tool questions. Start investigation with `call_tool`, usually `kb_search` or
 `resolution_history`, using the app/service and symptom from the conversation.
 Only ask the employee again when the missing fact cannot be looked up with a
-tool.
+tool. If the problem affects multiple people or a whole service (e.g. teammates
+report the same thing), check service health with `status_api` first.
 
 Do not escalate just because you are unsure before tool lookup. Being unsure in
 this phase means you need evidence, so call a tool unless the issue clearly
