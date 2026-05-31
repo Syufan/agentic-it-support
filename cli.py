@@ -8,8 +8,8 @@ from agent.parser import parse_proposal
 from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from observability.event_tracing import InMemoryEventLog
+from runtime import limits
 from runtime.controller import TurnCancelled, run_turn
-from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 from tools import DEFAULT_TOOLS
 
@@ -246,11 +246,18 @@ def _handle_command(
 
 
 def _format_status(case: CaseState) -> str:
-    remaining = budget_.remaining(case.budget_mode, case.tool_calls_current_investigation)
+    remaining_turn_tools = max(
+        0,
+        limits.MAX_TOOL_CALLS_PER_TURN - case.tool_calls_this_turn,
+    )
+    remaining_case_tools = max(
+        0,
+        limits.MAX_TOOL_CALLS_PER_CASE - case.tool_calls_total,
+    )
     return (
         f"[phase={case.phase.value} confidence={case.confidence:.2f} "
-        f"tools={case.tool_calls_current_investigation} remaining={remaining} "
-        f"budget={case.budget_mode.value}]"
+        f"tools_turn={case.tool_calls_this_turn} remaining_turn={remaining_turn_tools} "
+        f"tools_case={case.tool_calls_total} remaining_case={remaining_case_tools}]"
     )
 
 

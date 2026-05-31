@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from runtime.confidence import compute_confidence
-from state.case_state import BudgetMode, CaseState, ToolTrace
+from state.case_state import CaseState, ToolTrace
 
 
 def _trace(tool_name: str, success: bool = True) -> ToolTrace:
@@ -10,7 +10,6 @@ def _trace(tool_name: str, success: bool = True) -> ToolTrace:
         inputs={},
         output={},
         success=success,
-        budget_mode=BudgetMode.MAIN,
         timestamp=datetime.now(timezone.utc),
     )
 

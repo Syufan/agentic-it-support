@@ -1,5 +1,6 @@
 import pytest
 from agent.proposals import AgentAction, AgentProposal
+from runtime import limits
 from runtime.validator import validate_proposal as _validate_proposal
 from state.case_state import CaseState, Phase
 
@@ -168,15 +169,26 @@ def test_call_tool_with_invalid_tool_name_rejected():
     assert result.valid is False
 
 
-def test_call_tool_rejected_when_budget_exhausted():
+def test_call_tool_rejected_when_turn_tool_limit_reached():
     case = case_in(Phase.INVESTIGATING)
-    case.tool_calls_current_investigation = 5
+    case.tool_calls_this_turn = limits.MAX_TOOL_CALLS_PER_TURN
     result = validate_proposal(
         case,
         proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
     )
     assert result.valid is False
-    assert "budget" in result.reason
+    assert "turn tool-call limit" in result.reason
+
+
+def test_call_tool_rejected_when_case_tool_limit_reached():
+    case = case_in(Phase.INVESTIGATING)
+    case.tool_calls_total = limits.MAX_TOOL_CALLS_PER_CASE
+    result = validate_proposal(
+        case,
+        proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
+    )
+    assert result.valid is False
+    assert "case tool-call limit" in result.reason
 
 
 @pytest.mark.parametrize("tool_name", [

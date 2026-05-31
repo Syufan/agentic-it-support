@@ -1,6 +1,6 @@
 import pytest
 from runtime.message_builder import LLMInput, build_messages
-from state.case_state import BudgetMode, CaseState, Phase, ToolTrace
+from state.case_state import CaseState, Phase, ToolTrace
 
 
 # ── LLMInput contract ─────────────────────────────────────────────────────────
@@ -96,12 +96,22 @@ def test_observation_includes_facts():
     full_text = " ".join(m["content"] for m in result.messages)
     assert "macOS" in full_text
 
-def test_observation_includes_budget():
+def test_observation_does_not_expose_runtime_guard_counters():
     case = CaseState(phase=Phase.INVESTIGATING)
-    case.tool_calls_current_investigation = 3
+    case.tool_calls_this_turn = 3
+    case.tool_calls_total = 4
     result = build_messages(case)
     full_text = " ".join(m["content"] for m in result.messages)
-    assert "3" in full_text
+    assert "Tool calls:" not in full_text
+    assert "case total" not in full_text
+
+
+def test_observation_does_not_expose_runtime_confidence():
+    case = CaseState(phase=Phase.INVESTIGATING, confidence=0.73)
+    result = build_messages(case)
+    full_text = " ".join(m["content"] for m in result.messages)
+    assert "Confidence:" not in full_text
+    assert "0.73" not in full_text
 
 def test_observation_includes_tool_traces():
     case = CaseState(phase=Phase.INVESTIGATING)
@@ -111,7 +121,6 @@ def test_observation_includes_tool_traces():
             inputs={"query": "VPN"},
             output={"results": []},
             success=True,
-            budget_mode=BudgetMode.MAIN,
         )
     ]
     result = build_messages(case)

@@ -352,13 +352,14 @@ def test_initial_agent_greeting_shown():
     assert "agentic it support" in joined
 
 
-def test_format_status_includes_budget_and_remaining():
+def test_format_status_includes_tool_call_limits():
     case = CaseState(phase=Phase.INVESTIGATING)
-    case.tool_calls_current_investigation = 2
+    case.tool_calls_this_turn = 2
+    case.tool_calls_total = 4
     status = _format_status(case)
     assert "phase=investigating" in status
-    assert "remaining=" in status
-    assert "budget=main" in status
+    assert "remaining_turn=" in status
+    assert "remaining_case=" in status
 
 
 # ── typewrite ─────────────────────────────────────────────────────────────────

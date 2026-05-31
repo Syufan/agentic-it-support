@@ -1,6 +1,6 @@
 # Agentic IT Support
 
-An agentic IT helpdesk assistant built with FastAPI and OpenAI. The agent follows a deterministic state machine (intake → clarifying → investigating → resolving → escalating → closed) and uses a budget-controlled tool loop to diagnose and resolve employee IT issues.
+An agentic IT helpdesk assistant built with FastAPI and OpenAI. The agent follows a deterministic state machine (intake → clarifying → investigating → resolving → escalating → closed) and uses runtime-guarded tool loops to diagnose and resolve employee IT issues.
 
 ## Tools, data sources, and policy
 

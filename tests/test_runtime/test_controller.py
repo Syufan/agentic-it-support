@@ -4,9 +4,10 @@ import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.event_tracing import InMemoryEventLog
+from runtime import limits
 from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
-from state.case_state import BudgetMode, CaseState, Phase, ToolTrace
+from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 
@@ -61,21 +62,14 @@ def test_ask_user_returns_message():
 
 
 # ── runtime-owned flags can no longer be set by the LLM proposal ──────────────
-# has_safe_low_risk_guidance (T9) and new_critical_fact_added (T12) are runtime
-# judgments; projecting a proposal must not clobber what the runtime set.
+# has_safe_low_risk_guidance (T9) is a runtime judgment; projecting a proposal
+# must not clobber what the runtime set.
 
 def test_project_does_not_clobber_safe_guidance_flag():
     case = CaseState()
     case.has_safe_low_risk_guidance = True
     _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="try restarting"))
     assert case.has_safe_low_risk_guidance is True
-
-
-def test_project_does_not_clobber_new_critical_fact_flag():
-    case = CaseState()
-    case.new_critical_fact_added = True
-    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="try restarting"))
-    assert case.new_critical_fact_added is True
 
 
 def test_vague_initial_greeting_asks_for_issue_without_llm():
@@ -244,17 +238,16 @@ def test_tool_call_then_resolve_in_one_turn():
 
 
 @pytest.mark.xfail(
-    reason="T9 (safe-guidance-at-budget) temporarily unreachable: has_safe_low_risk_guidance "
+    reason="T9 (safe-guidance-at-tool-limit) temporarily unreachable: has_safe_low_risk_guidance "
     "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
     "agent-proposal-degovernance memory.",
     strict=True,
 )
-def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
+def test_final_tool_call_gets_synthesis_chance_before_tool_limit_escalation():
     case = CaseState(
         phase=Phase.INVESTIGATING,
         confidence=0.6,
-        tool_calls_current_investigation=4,
-        tool_calls_total=4,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE - 1,
     )
     proposals = [
         _proposal(
@@ -281,17 +274,16 @@ def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
 
 
 @pytest.mark.xfail(
-    reason="T9 (safe-guidance-at-budget) temporarily unreachable: has_safe_low_risk_guidance "
+    reason="T9 (safe-guidance-at-tool-limit) temporarily unreachable: has_safe_low_risk_guidance "
     "removed from AgentProposal; will be re-derived via policy/engine (step B). See "
     "agent-proposal-degovernance memory.",
     strict=True,
 )
-def test_budget_exhausted_question_retries_to_resolution():
+def test_tool_case_limit_reached_question_retries_to_resolution():
     case = CaseState(
         phase=Phase.INVESTIGATING,
         confidence=0.6,
-        tool_calls_current_investigation=5,
-        tool_calls_total=5,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
     )
     ask_again = _proposal(
         action=AgentAction.ASK_USER,
@@ -375,7 +367,7 @@ def test_tool_counters_incremented():
     tool = MockTool(ToolResult(success=True, data={}))
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
 
-    assert case.tool_calls_current_investigation == 1
+    assert case.tool_calls_this_turn == 1
     assert case.tool_calls_total == 1
 
 
@@ -566,18 +558,17 @@ def test_escalation_context_includes_resolution_attempts():
     assert "resolution_attempts" in case.escalation_context
 
 
-def test_runtime_budget_escalation_builds_handoff_context():
+def test_runtime_tool_limit_escalation_builds_handoff_context():
     case = CaseState(
         phase=Phase.INVESTIGATING,
         confidence=0.6,
-        tool_calls_current_investigation=5,
-        tool_calls_total=5,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
         has_safe_low_risk_guidance=False,
     )
     response = run_turn(case, "still broken", MockLLMClient([
         _proposal(action=AgentAction.ASK_USER, message="Can you try again?"),
         _proposal(action=AgentAction.ESCALATE, confidence=0.4,
-                  escalation_reason="investigation budget exhausted", message=None),
+                  escalation_reason="investigation tool-call limit reached", message=None),
     ]), {})
 
     assert case.phase == Phase.CLOSED
@@ -646,8 +637,8 @@ def test_escalate_response_is_handoff_message():
 def test_confidence_is_evidence_based_not_from_proposal():
     case = _case_after_clarification()
     case.tool_traces = [
-        ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True, budget_mode=BudgetMode.MAIN),
-        ToolTrace(tool_name="status_api", inputs={}, output={}, success=True, budget_mode=BudgetMode.MAIN),
+        ToolTrace(tool_name="kb_search", inputs={}, output={}, success=True),
+        ToolTrace(tool_name="status_api", inputs={}, output={}, success=True),
     ]
     case.tool_calls_total = 2
     run_turn(case, "msg", MockLLMClient([

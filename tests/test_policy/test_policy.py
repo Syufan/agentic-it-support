@@ -3,8 +3,9 @@ import pytest
 from agent.proposals import AgentAction, AgentProposal
 from policy.engine import check_business_policy as _check_business_policy
 from policy.engine import find_policy_rules, load_policy_rules
+from runtime import limits
 from runtime.diagnosis_policy import check_diagnosis_policy as check
-from state.case_state import BudgetMode, CaseState, Phase
+from state.case_state import CaseState, Phase
 
 
 def check_business_policy(case, proposal):
@@ -42,8 +43,8 @@ def _case(**kwargs) -> CaseState:
 
 # ── premature escalation guard ────────────────────────────────────────────────
 
-def test_escalate_blocked_when_budget_remains_and_confidence_above_low():
-    case = _case(tool_calls_current_investigation=0, budget_mode=BudgetMode.MAIN)
+def test_escalate_blocked_when_tool_limit_not_reached_and_confidence_above_low():
+    case = _case(tool_calls_total=0)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -51,9 +52,8 @@ def test_escalate_blocked_when_budget_remains_and_confidence_above_low():
     assert "premature escalation" in decision.reason
 
 
-def test_escalate_blocked_when_budget_remains_even_with_low_confidence():
-    case = _case(tool_calls_total=1, tool_calls_current_investigation=1,
-                 budget_mode=BudgetMode.MAIN)
+def test_escalate_blocked_when_tool_limit_not_reached_even_with_low_confidence():
+    case = _case(tool_calls_total=1)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -61,9 +61,8 @@ def test_escalate_blocked_when_budget_remains_even_with_low_confidence():
     assert "premature escalation" in decision.reason
 
 
-def test_escalate_allowed_when_budget_exhausted():
-    case = _case(tool_calls_total=5, tool_calls_current_investigation=5,
-                 budget_mode=BudgetMode.MAIN)
+def test_escalate_allowed_when_tool_case_limit_reached():
+    case = _case(tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     decision = check(case, proposal)
@@ -71,16 +70,14 @@ def test_escalate_allowed_when_budget_exhausted():
 
 
 def test_escalate_allowed_when_already_in_escalating_phase():
-    case = _case(phase=Phase.ESCALATING, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(phase=Phase.ESCALATING, tool_calls_total=0)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
                          escalation_reason="needs help", message=None)
     assert check(case, proposal).allowed
 
 
 def test_escalate_blocked_before_any_tool_for_investigable_issue():
-    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(tool_calls_total=0)
     proposal = _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
@@ -93,8 +90,7 @@ def test_escalate_blocked_before_any_tool_for_investigable_issue():
 
 
 def test_escalate_allowed_before_tool_for_direct_handoff_reason():
-    case = _case(tool_calls_total=0, tool_calls_current_investigation=0,
-                 budget_mode=BudgetMode.MAIN)
+    case = _case(tool_calls_total=0)
     proposal = _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,

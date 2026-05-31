@@ -1,4 +1,4 @@
-from state.case_state import BudgetMode, CaseState, Phase
+from state.case_state import CaseState, Phase
 
 
 def test_default_phase_is_intake():
@@ -6,23 +6,17 @@ def test_default_phase_is_intake():
     assert case.phase == Phase.INTAKE
 
 
-def test_default_budget_mode_is_main():
-    case = CaseState()
-    assert case.budget_mode == BudgetMode.MAIN
-
-
 def test_default_flags_are_false():
     case = CaseState()
-    assert case.exception_used is False
     assert case.has_safe_low_risk_guidance is False
-    assert case.new_critical_fact_added is False
     assert case.handoff_completed is False
 
 
 def test_default_counters_are_zero():
     case = CaseState()
-    assert case.tool_calls_current_investigation == 0
+    assert case.tool_calls_this_turn == 0
     assert case.tool_calls_total == 0
+    assert case.llm_calls_total == 0
     assert case.resolution_attempts == 0
     assert case.confidence == 0.0
 

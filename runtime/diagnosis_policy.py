@@ -2,8 +2,8 @@ from dataclasses import dataclass
 import re
 
 from agent.proposals import AgentAction, AgentProposal
+from runtime import limits
 from runtime.constants import CONFIDENCE_HIGH
-from runtime import budget as budget_
 from state.case_state import CaseState, Phase
 
 _VAGUE_INTAKE_MESSAGES = {
@@ -151,24 +151,20 @@ def check_diagnosis_policy(
             ),
         )
 
-    if _budget_exhausted_question(case, proposal):
+    if _tool_case_limit_question(case, proposal):
         return DiagnosisPolicyDecision(
             False,
-            "budget exhausted: choose resolution or escalation instead of more clarifying",
+            "case tool-call limit reached: choose resolution or escalation instead of more clarifying",
             (
-                "The investigation tool budget is exhausted. Do not ask another "
+                "The case tool-call limit is reached. Do not ask another "
                 "ordinary clarifying question. Provide safe low-risk guidance if "
                 "available, or escalate with the evidence already gathered."
             ),
         )
 
     if proposal.action == AgentAction.ESCALATE and case.phase != Phase.ESCALATING:
-        budget_done = budget_.exhausted(
-            case.budget_mode,
-            case.tool_calls_current_investigation,
-        )
         if (
-            not budget_done
+            not limits.tool_case_limit_reached(case)
             and not has_direct_handoff_reason(proposal.escalation_reason or "")
             and not has_direct_handoff_signal(case)
         ):
@@ -285,11 +281,11 @@ def _service_wide_question_before_status_check(
     )
 
 
-def _budget_exhausted_question(case: CaseState, proposal: AgentProposal) -> bool:
+def _tool_case_limit_question(case: CaseState, proposal: AgentProposal) -> bool:
     return (
         proposal.action == AgentAction.ASK_USER
         and case.phase == Phase.INVESTIGATING
-        and budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation)
+        and limits.tool_case_limit_reached(case)
     )
 
 

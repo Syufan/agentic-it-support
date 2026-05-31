@@ -21,15 +21,14 @@ from runtime.diagnosis_policy import (
     has_usable_issue_description,
     needs_issue_description,
 )
+from runtime import limits
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
 from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
-_MAX_INNER_ITERATIONS = 10
 _MAX_CORRECTIONS = 3
-_MAX_CLARIFICATION_ATTEMPTS = 3
 
 
 class TurnCancelled(Exception):
@@ -50,6 +49,7 @@ def run_turn(
     retry_penalty = (settings or Settings()).confidence_retry_penalty
 
     case.conversation.append({"role": "user", "content": user_message})
+    case.tool_calls_this_turn = 0
 
     if event_log:
         record_turn_start(event_log, case.case_id, case.phase.value, case.confidence)
@@ -59,9 +59,11 @@ def run_turn(
 
     correction: str | None = None
     corrections = 0
-    for _ in range(_MAX_INNER_ITERATIONS):
+    for _ in range(limits.MAX_INNER_ITERATIONS):
         if should_cancel and should_cancel():
             raise TurnCancelled()
+        if limits.llm_case_limit_reached(case):
+            return _force_escalate(case, "maximum LLM calls reached without resolution")
 
         llm_input = build_messages(case, correction=correction)
         correction = None
@@ -70,6 +72,7 @@ def run_turn(
         except (LLMClientError, ProposalParseError):
             return _force_escalate(case, "LLM provider error during investigation")
 
+        case.llm_calls_total += 1
         _record_llm_stats(case, llm, event_log)
 
         # The provider call is the blocking wait, so re-check here: this is what
@@ -164,7 +167,7 @@ def run_turn(
         if case.phase == Phase.ESCALATING and not case.handoff_completed:
             return _complete_runtime_handoff(
                 case,
-                "Investigation budget was exhausted without a safe self-service resolution",
+                "Investigation tool-call limit was reached without a safe self-service resolution",
                 event_log,
             )
 
@@ -176,7 +179,7 @@ def run_turn(
             and not has_usable_issue_description(case)
         ):
             case.clarification_attempts += 1
-            if case.clarification_attempts > _MAX_CLARIFICATION_ATTEMPTS:
+            if limits.clarification_limit_reached(case):
                 # No usable issue was ever described — there is nothing to diagnose
                 # or hand off, so soft-close rather than escalate to a specialist.
                 return _soft_close(case)
@@ -323,7 +326,6 @@ def _execute_tool(
         inputs=proposal.tool_input,
         output=result.data if result.success else {"error": result.error},
         success=result.success,
-        budget_mode=case.budget_mode,
         timestamp=datetime.now(timezone.utc),
     ))
 
@@ -332,18 +334,12 @@ def _execute_tool(
     else:
         case.facts[f"{tool_name}_error"] = result.error or "unknown error"
 
-    case.tool_calls_current_investigation += 1
+    case.tool_calls_this_turn += 1
     case.tool_calls_total += 1
 
 
 def _apply_transition(case: CaseState, result: TransitionResult) -> None:
     case.phase = result.next_phase
-    if result.budget_mode is not None:
-        case.budget_mode = result.budget_mode
-    if result.reset_tool_counter:
-        case.tool_calls_current_investigation = 0
-    if result.set_exception_used:
-        case.exception_used = True
 
 
 def _build_escalation_context(

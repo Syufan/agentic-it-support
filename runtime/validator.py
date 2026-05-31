@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from agent.proposals import AgentAction, AgentProposal
-from runtime import budget as budget_
+from runtime import limits
 from state.case_state import CaseState, Phase
 
 _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
@@ -41,8 +41,10 @@ def validate_proposal(
                 return ValidationResult(False, "call_tool requires tool_name")
             if proposal.tool_name not in valid_tools:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
-            if budget_.exhausted(case.budget_mode, case.tool_calls_current_investigation):
-                return ValidationResult(False, "tool budget exhausted")
+            if limits.tool_turn_limit_reached(case):
+                return ValidationResult(False, "turn tool-call limit reached")
+            if limits.tool_case_limit_reached(case):
+                return ValidationResult(False, "case tool-call limit reached")
 
         case AgentAction.RESOLVE:
             if not proposal.message:

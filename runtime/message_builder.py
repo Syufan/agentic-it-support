@@ -40,8 +40,6 @@ def _build_observation(case: CaseState) -> str:
     lines = [
         "[Case State]",
         f"Phase: {case.phase.value}",
-        f"Confidence: {case.confidence}",
-        f"Tool budget: used {case.tool_calls_current_investigation} (mode: {case.budget_mode.value})",
     ]
 
     if case.facts:
