@@ -5,7 +5,7 @@ Compile a complete escalation package from the case state so the human specialis
 - Summarise the issue as described by the employee
 - List all steps taken and tools checked
 - State what was found and what was not resolved
-- Include your confidence score and why you are escalating
+- Explain why you are escalating
 
 ## Output format
 Respond with a single JSON object and nothing else:
@@ -13,7 +13,6 @@ Respond with a single JSON object and nothing else:
 ```json
 {
   "action": "escalate",
-  "confidence": 0.0–1.0,
   "reasoning_summary": "why you are escalating",
   "escalation_reason": "one short, plain sentence the employee can read explaining why this needs a human (the full context is captured separately)"
 }

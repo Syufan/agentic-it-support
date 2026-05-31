@@ -18,6 +18,3 @@ class SessionStore:
 
     def active_count(self) -> int:
         return len(self._cases)
-
-
-store = SessionStore()

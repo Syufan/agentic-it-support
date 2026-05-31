@@ -1,7 +1,18 @@
 import pytest
 from agent.proposals import AgentAction, AgentProposal
-from runtime.validator import validate_proposal
-from state.case_state import CaseState, MissingInfoSource, Phase
+from runtime import limits
+from runtime.validator import validate_proposal as _validate_proposal
+from state.case_state import CaseState, Phase
+
+# Production validate_proposal requires the caller to inject the tool registry;
+# tests default to the standard set via this thin wrapper so existing call sites
+# stay unchanged. Tests that exercise the registry parameter pass valid_tools
+# explicitly and bypass the default.
+_TEST_TOOLS = {"kb_search", "status_api", "user_directory", "resolution_history"}
+
+
+def validate_proposal(case, proposal, valid_tools=_TEST_TOOLS):
+    return _validate_proposal(case, proposal, valid_tools)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -92,33 +103,31 @@ def test_investigating_allows_all_actions(action, extra):
 @pytest.mark.parametrize("action,extra", [
     (AgentAction.RESOLVE, {"message": "Try this."}),
     (AgentAction.ASK_USER, {"message": "Did it work?"}),
+    # A resolution attempt can reveal the fix is unsafe/beyond self-service, so the
+    # agent may bail to handoff from RESOLVING (diagnosis_policy still gates the reason).
+    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
 ])
-def test_resolving_allows_resolve_and_ask_user(action, extra):
+def test_resolving_allows_resolve_ask_user_and_escalate(action, extra):
     result = validate_proposal(case_in(Phase.RESOLVING), proposal(action=action, **extra))
     assert result.valid is True
 
-@pytest.mark.parametrize("action,extra", [
-    (AgentAction.CALL_TOOL, {"tool_name": "kb_search", "tool_input": {"query": "vpn"}}),
-    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
-])
-def test_resolving_rejects_call_tool_and_escalate(action, extra):
-    result = validate_proposal(case_in(Phase.RESOLVING), proposal(action=action, **extra))
+def test_resolving_rejects_call_tool():
+    result = validate_proposal(
+        case_in(Phase.RESOLVING),
+        proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
+    )
     assert result.valid is False
 
 
-def test_escalating_allows_escalate():
-    result = validate_proposal(
-        case_in(Phase.ESCALATING),
-        proposal(action=AgentAction.ESCALATE, escalation_reason="needs admin"),
-    )
-    assert result.valid is True
-
+# ESCALATING is runtime-terminal: the runtime executes the handoff and closes the
+# case in-turn, so the LLM has no valid move here (mirrors CLOSED).
 @pytest.mark.parametrize("action,extra", [
     (AgentAction.ASK_USER, {"message": "What OS?"}),
     (AgentAction.CALL_TOOL, {"tool_name": "kb_search", "tool_input": {"query": "vpn"}}),
     (AgentAction.RESOLVE, {"message": "Try this."}),
+    (AgentAction.ESCALATE, {"escalation_reason": "needs admin"}),
 ])
-def test_escalating_rejects_other_actions(action, extra):
+def test_escalating_rejects_all_actions(action, extra):
     result = validate_proposal(case_in(Phase.ESCALATING), proposal(action=action, **extra))
     assert result.valid is False
 
@@ -158,19 +167,38 @@ def test_call_tool_with_invalid_tool_name_rejected():
     assert result.valid is False
 
 
-def test_call_tool_rejected_when_budget_exhausted():
+def test_call_tool_rejected_when_turn_tool_limit_reached():
     case = case_in(Phase.INVESTIGATING)
-    case.tool_calls_current_investigation = 5
+    case.tool_calls_this_turn = limits.MAX_TOOL_CALLS_PER_TURN
     result = validate_proposal(
         case,
         proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
     )
     assert result.valid is False
-    assert "budget" in result.reason
+    assert "turn tool-call limit" in result.reason
+    # turn budget refills next turn, so the agent is steered to RESOLVE or ASK_USER
+    assert "RESOLVE" in result.correction
+    assert "ASK_USER" in result.correction
+
+
+def test_call_tool_rejected_when_case_tool_limit_reached():
+    case = case_in(Phase.INVESTIGATING)
+    case.tool_calls_total = limits.MAX_TOOL_CALLS_PER_CASE
+    result = validate_proposal(
+        case,
+        proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"query": "vpn"}),
+    )
+    assert result.valid is False
+    assert "case tool-call limit" in result.reason
+    # runtime states the constraint (no more tools) and asks for a non-tool action on
+    # existing evidence — it does NOT prescribe which terminal action to take, leaving
+    # the proposal to the LLM and the outcome to the transitions.
+    assert "no longer allowed" in result.correction
+    assert "non-tool action" in result.correction
 
 
 @pytest.mark.parametrize("tool_name", [
-    "kb_search", "status_api", "user_directory",
+    "kb_search", "status_api", "user_directory", "resolution_history",
 ])
 def test_call_tool_with_valid_tool_names(tool_name):
     result = validate_proposal(
@@ -178,6 +206,26 @@ def test_call_tool_with_valid_tool_names(tool_name):
         proposal(action=AgentAction.CALL_TOOL, tool_name=tool_name, tool_input={"query": "x"}),
     )
     assert result.valid is True
+
+
+def test_policy_lookup_is_not_llm_callable_tool():
+    result = validate_proposal(
+        case_in(Phase.INVESTIGATING),
+        proposal(action=AgentAction.CALL_TOOL, tool_name="policy_lookup", tool_input={}),
+    )
+    assert result.valid is False
+    assert "unknown tool" in result.reason
+
+
+def test_tool_validity_is_driven_by_passed_registry():
+    # The set of callable tools is whatever registry the caller injects — there is
+    # no second hardcoded source of truth inside the validator.
+    case = case_in(Phase.INVESTIGATING)
+    custom = proposal(action=AgentAction.CALL_TOOL, tool_name="custom_tool", tool_input={"q": "x"})
+    kb = proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", tool_input={"q": "x"})
+
+    assert validate_proposal(case, custom, valid_tools={"custom_tool"}).valid is True
+    assert validate_proposal(case, kb, valid_tools={"custom_tool"}).valid is False
 
 def test_resolve_without_message_rejected():
     result = validate_proposal(

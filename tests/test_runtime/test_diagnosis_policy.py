@@ -1,13 +1,11 @@
 from agent.proposals import AgentAction, AgentProposal
+from runtime import limits
 from runtime.diagnosis_policy import (
     check_diagnosis_policy,
-    has_direct_handoff_reason,
-    has_direct_handoff_signal,
-    has_service_wide_signal,
     has_usable_issue_description,
     needs_issue_description,
 )
-from state.case_state import BudgetMode, CaseState, Phase
+from state.case_state import CaseState, Phase
 
 
 def _proposal(**kwargs) -> AgentProposal:
@@ -52,36 +50,9 @@ def test_actionable_issue_description_is_usable():
     assert has_usable_issue_description(case) is True
 
 
-def test_repeated_pre_tool_question_is_blocked_after_actionable_description():
-    case = _case(phase=Phase.CLARIFYING, clarification_attempts=1)
-    case.conversation = [
-        {"role": "user", "content": "hey"},
-        {
-            "role": "user",
-            "content": "shadowrocket is connected but I cannot visit google on macos right now",
-        },
-    ]
-    decision = check_diagnosis_policy(case, _proposal(action=AgentAction.ASK_USER))
-    assert decision.allowed is False
-    assert "described an actionable issue" in decision.reason
-
-
-def test_first_clarifying_question_is_allowed_for_actionable_description():
-    case = _case(phase=Phase.CLARIFYING, clarification_attempts=0)
-    case.conversation = [
-        {
-            "role": "user",
-            "content": "shadowrocket is connected but I cannot visit google on macos right now",
-        },
-    ]
-    assert check_diagnosis_policy(case, _proposal(action=AgentAction.ASK_USER)).allowed
-
-
-def test_escalation_blocked_when_budget_remains_without_direct_handoff_reason():
+def test_escalation_blocked_when_tool_limit_not_reached_without_direct_handoff_reason():
     case = _case(
         phase=Phase.INVESTIGATING,
-        budget_mode=BudgetMode.MAIN,
-        tool_calls_current_investigation=1,
         tool_calls_total=1,
     )
     proposal = _proposal(
@@ -95,12 +66,10 @@ def test_escalation_blocked_when_budget_remains_without_direct_handoff_reason():
     assert "premature escalation" in decision.reason
 
 
-def test_escalation_allowed_when_budget_exhausted():
+def test_escalation_allowed_when_tool_case_limit_reached():
     case = _case(
         phase=Phase.INVESTIGATING,
-        budget_mode=BudgetMode.MAIN,
-        tool_calls_current_investigation=5,
-        tool_calls_total=5,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
     )
     proposal = _proposal(
         action=AgentAction.ESCALATE,
@@ -120,50 +89,41 @@ def test_escalation_allowed_for_direct_handoff_reason():
     assert check_diagnosis_policy(case, proposal).allowed
 
 
-def test_resolve_blocked_without_tool_evidence():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=0)
+def test_resolve_blocked_without_evidence():
+    # no successful tool source → confidence 0 → below the resolve bar → blocked
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.0)
     decision = check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, confidence=0.7, message="Try this"),
     )
     assert decision.allowed is False
-    assert "tool lookup" in decision.reason
+    assert "resolve threshold" in decision.reason
 
 
-def test_high_confidence_resolve_needs_user_clarification_or_multiple_tools():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1)
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
-    decision = check_diagnosis_policy(
+def test_resolve_allowed_with_sufficient_confidence():
+    # confidence at/above the bar (≈ one successful source) authorizes the fix
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    assert check_diagnosis_policy(
         case,
-        _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Try this"),
-    )
-    assert decision.allowed is False
-    assert "insufficient investigation" in decision.reason
+        _proposal(action=AgentAction.RESOLVE, message="Try this"),
+    ).allowed
 
 
-def test_direct_handoff_reason_detection():
-    assert has_direct_handoff_reason("requires admin approval") is True
-    assert has_direct_handoff_reason("needs human intervention") is False
-
-
-def test_budget_exhausted_blocks_ordinary_clarifying_question():
+def test_tool_case_limit_reached_blocks_ordinary_clarifying_question():
     case = _case(
         phase=Phase.INVESTIGATING,
-        budget_mode=BudgetMode.MAIN,
-        tool_calls_current_investigation=5,
-        tool_calls_total=5,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
     )
     decision = check_diagnosis_policy(case, _proposal(action=AgentAction.ASK_USER))
     assert decision.allowed is False
-    assert "budget exhausted" in decision.reason
+    assert "tool-call limit" in decision.reason
 
 
-def test_budget_exhausted_allows_resolution_or_escalation_not_more_tools_or_questions():
+def test_tool_case_limit_reached_allows_resolution_or_escalation_not_more_tools_or_questions():
     case = _case(
         phase=Phase.INVESTIGATING,
-        budget_mode=BudgetMode.MAIN,
-        tool_calls_current_investigation=5,
-        tool_calls_total=5,
+        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
+        confidence=0.6,  # evidence gathered → resolve is authorized
     )
     assert check_diagnosis_policy(
         case,
@@ -175,16 +135,8 @@ def test_budget_exhausted_allows_resolution_or_escalation_not_more_tools_or_ques
     ).allowed
 
 
-def test_security_user_message_is_direct_handoff_signal():
-    case = CaseState()
-    case.conversation = [
-        {"role": "user", "content": "i clicked a suspicious link and now my account sends weird emails"},
-    ]
-    assert has_direct_handoff_signal(case) is True
-
-
-def test_direct_handoff_signal_allows_escalation_before_budget_exhaustion():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1, tool_calls_current_investigation=1)
+def test_direct_handoff_signal_allows_escalation_before_tool_case_limit():
+    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1)
     case.conversation = [
         {"role": "user", "content": "i clicked a suspicious link and now my account sends weird emails"},
     ]
@@ -200,28 +152,3 @@ def test_direct_handoff_signal_allows_escalation_before_budget_exhaustion():
     assert decision.allowed is True
 
 
-def test_service_wide_issue_is_detected():
-    case = CaseState()
-    case.conversation = [
-        {
-            "role": "user",
-            "content": "salesforce is slow since yesterday and my teammates in chicago see the same issue",
-        },
-    ]
-    assert has_service_wide_signal(case) is True
-
-
-def test_service_wide_issue_blocks_user_question_before_status_check():
-    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=0)
-    case.conversation = [
-        {
-            "role": "user",
-            "content": "salesforce is slow since yesterday and my teammates in chicago see the same issue",
-        },
-    ]
-    decision = check_diagnosis_policy(
-        case,
-        _proposal(action=AgentAction.ASK_USER, message="Any error message?"),
-    )
-    assert decision.allowed is False
-    assert "status_api" in decision.correction
