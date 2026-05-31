@@ -61,7 +61,7 @@ def run_chat_turn(
     message: str,
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
-    turn_runner: TurnRunner,
+    turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
 ) -> str:
     try:
         return turn_runner(case, message, llm, tools)

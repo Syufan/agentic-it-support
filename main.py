@@ -6,6 +6,7 @@ from agent.parser import parse_proposal
 from config.settings import Settings
 from llm.client import BaseLLMClient, RealLLMClient
 from api.server import ITSupportWebServer
+from observability.event_tracing import InMemoryEventLog
 from runtime.query_loop import run_turn
 from state.session import SessionStore
 from tools import DEFAULT_TOOLS
@@ -13,6 +14,11 @@ from tools.base import BaseTool
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
+
+# The server is long-running and multi-case, so cap the shared event log to a
+# ring buffer instead of letting it grow without bound. Events carry case_id,
+# so a single shared log stays filterable per case.
+EVENT_LOG_CAPACITY = 1000
 
 
 def _build_webserver() -> ITSupportWebServer:
@@ -25,7 +31,8 @@ def _build_webserver() -> ITSupportWebServer:
     )
     tools = DEFAULT_TOOLS
     store = SessionStore()
-    turn_runner = partial(run_turn, settings=settings)
+    event_log = InMemoryEventLog(max_events=EVENT_LOG_CAPACITY)
+    turn_runner = partial(run_turn, settings=settings, event_log=event_log)
 
     _validate_dependencies(llm=llm, tools=tools, store=store, turn_runner=turn_runner)
 

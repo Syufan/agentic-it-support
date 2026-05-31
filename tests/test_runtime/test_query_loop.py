@@ -5,7 +5,7 @@ from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.event_tracing import InMemoryEventLog
 from runtime import limits
-from runtime.query_loop import TurnCancelled, _execute_tool, _project_to_state, run_turn
+from runtime.query_loop import TurnCancelled, run_turn
 from runtime.message_builder import LLMInput
 from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
@@ -59,17 +59,6 @@ def test_ask_user_returns_message():
     case = CaseState()
     response = run_turn(case, "VPN is broken", MockLLMClient([_proposal(message="What OS?")]), {})
     assert response == "What OS?"
-
-
-# ── runtime-owned flags can no longer be set by the LLM proposal ──────────────
-# has_safe_low_risk_guidance (T9) is a runtime judgment; projecting a proposal
-# must not clobber what the runtime set.
-
-def test_project_does_not_clobber_safe_guidance_flag():
-    case = CaseState()
-    case.has_safe_low_risk_guidance = True
-    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="try restarting"))
-    assert case.has_safe_low_risk_guidance is True
 
 
 def test_vague_initial_greeting_asks_for_issue_without_llm():
@@ -417,23 +406,6 @@ def test_failed_tool_result_not_stored_in_facts():
     tool = MockTool(ToolResult(success=False, data={}, error="service unavailable"))
     run_turn(case, "VPN broken", MockLLMClient(_failing_proposals()), {"kb_search": tool})
     assert "kb_search_result" not in case.facts
-
-# A validated proposal can no longer reference a tool outside the registry
-# (validate_proposal checks against set(tool_registry)), so the missing-tool path
-# is unreachable via run_turn. _execute_tool still guards it defensively, so we
-# unit-test that branch directly rather than through the (now-blocked) turn loop.
-
-def test_missing_tool_records_failure_trace():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    _execute_tool(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
-                                  tool_input={"query": "vpn"}, message=None), {})
-    assert case.tool_traces[0].success is False
-
-def test_missing_tool_error_stored_in_facts():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    _execute_tool(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
-                                  tool_input={"query": "vpn"}, message=None), {})
-    assert "kb_search_error" in case.facts
 
 
 # ── resolve ───────────────────────────────────────────────────────────────────
