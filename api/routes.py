@@ -8,15 +8,13 @@ from state.case_state import CaseState, Phase
 from state.session import SessionStore
 from tools.base import BaseTool
 
-TurnRunner = Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str]
-
 
 def build_router(
     *,
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     store: SessionStore,
-    turn_runner: TurnRunner,
+    turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
 ) -> APIRouter:
     """Wire HTTP routes to the request-handling functions below. The router only
     does dispatch; the actual flow lives in module-level functions so it can be
