@@ -111,8 +111,7 @@ This project focuses on employee-facing IT helpdesk triage for a small set of co
 
 The agent can attempt safe guidance for VPN connectivity troubleshooting, password reset self-service guidance, and service status checks for known incidents.
 
-The agent must escalate or route through policy for high-risk cases such as MFA
-recovery, permission or access grants, and infrastructure or network configuration changes.
+The agent must escalate or route through policy for MFA recovery, permission or access grants, and infrastructure or network configuration changes.
 
 I chose this problem because these cases are common, repetitive, and naturally test the boundaries of an agentic system. Some issues can be handled with safe troubleshooting guidance, while others require policy checks, approval, or human escalation. This makes the problem a good fit for explicit runtime state, tool grounding, and policy-controlled resolution versus escalation.
 
@@ -189,7 +188,11 @@ I evaluated the system with automated test cases and scenario-based runs.
 
 The unit tests check the core runtime behavior: state transitions, action validation, policy boundaries, tool execution, message building, API routes, and CLI behavior.
 
-The evaluation scenarios simulate realistic helpdesk conversations, including VPN issues, account/MFA problems, software access requests, vague intake messages, service degradation, and unresolved cases that should escalate.
+The scenario suite contains six conversations that mirror the project scope: three safe-guidance cases and three boundary cases.
+
+Safe-guidance cases cover VPN troubleshooting, password reset guidance, and known service degradation checks.
+
+Boundary cases cover MFA recovery escalation, access-grant policy routing, and network configuration escalation.
 
 The main evaluation criteria are whether the agent resolves safe cases, escalates risky or unsupported cases, uses tools before giving guidance, and preserves enough context for human IT handoff.
 
