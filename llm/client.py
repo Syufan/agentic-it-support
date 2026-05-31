@@ -53,15 +53,11 @@ class LLMClientError(RuntimeError):
 
 
 class LLMConfigurationError(LLMClientError):
-    pass
+    """Misconfiguration (e.g. no api_key) — a fail-fast bug, not retryable."""
 
 
 class LLMProviderError(LLMClientError):
-    pass
-
-
-class LLMResponseError(LLMClientError):
-    pass
+    """A transient provider failure (network, 429, timeout, empty response)."""
 
 
 class RealLLMClient(BaseLLMClient[T]):
@@ -99,7 +95,7 @@ class RealLLMClient(BaseLLMClient[T]):
         self.last_stats = _stats_from(response, (time.perf_counter() - started) * 1000)
 
         if not response.choices:
-            raise LLMResponseError("LLM returned no choices")
+            raise LLMProviderError("LLM returned no choices")
         raw = response.choices[0].message.content or "{}"
         return self._parse(raw)
 

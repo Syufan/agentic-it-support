@@ -2,10 +2,11 @@ import pytest
 from llm.client import (
     BaseLLMClient,
     LLMConfigurationError,
-    LLMResponseError,
+    LLMProviderError,
     MockLLMClient,
     RealLLMClient,
 )
+from agent.parser import ProposalParseError
 from agent.proposals import AgentAction, AgentProposal
 from runtime.message_builder import LLMInput
 
@@ -125,11 +126,11 @@ def test_real_llm_delegates_raw_content_to_parser():
 
 def test_real_llm_propagates_parser_error():
     def parser(raw: str) -> str:
-        raise LLMResponseError("parser said no")
+        raise ProposalParseError("parser said no")
 
     client = RealLLMClient(response_parser=parser, api_key="", client=_FakeOpenAIClient("whatever"))
 
-    with pytest.raises(LLMResponseError, match="parser said no"):
+    with pytest.raises(ProposalParseError, match="parser said no"):
         client.call(_llm_input())
 
 
@@ -148,7 +149,7 @@ class _FakeOpenAIClientNoChoices:
 
 def test_real_llm_raises_for_empty_choices():
     client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientNoChoices())
-    with pytest.raises(LLMResponseError, match="no choices"):
+    with pytest.raises(LLMProviderError, match="no choices"):
         client.call(_llm_input())
 
 
