@@ -22,12 +22,6 @@ class BudgetMode(str, Enum):
     EXCEPTION = "exception"
 
 
-class MissingInfoSource(str, Enum):
-    USER = "user"
-    TOOL = "tool"
-    NONE = "none"
-
-
 @dataclass
 class ToolTrace:
     tool_name: str
@@ -50,7 +44,6 @@ class CaseState:
 
     # Confidence & missing info
     confidence: float = 0.0
-    missing_info_source: MissingInfoSource = MissingInfoSource.NONE
     missing_info: list[str] = field(default_factory=list)
     clarification_attempts: int = 0  # consecutive clarifying turns without progress
 

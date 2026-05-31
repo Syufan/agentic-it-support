@@ -1,7 +1,7 @@
 import pytest
 from agent.proposals import AgentAction, AgentProposal
 from runtime.validator import validate_proposal as _validate_proposal
-from state.case_state import CaseState, MissingInfoSource, Phase
+from state.case_state import CaseState, Phase
 
 # Production validate_proposal requires the caller to inject the tool registry;
 # tests default to the standard set via this thin wrapper so existing call sites

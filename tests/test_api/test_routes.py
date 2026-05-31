@@ -5,7 +5,6 @@ from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from api.server import ITSupportWebServer
 from runtime.controller import run_turn
-from state.case_state import MissingInfoSource
 from state.session import SessionStore
 from tools.base import BaseTool, ToolResult
 from typing import Any
@@ -111,10 +110,12 @@ def test_chat_continues_existing_case(persistent_store):
         turn_runner=run_turn,
     ).get_app()
     c = TestClient(app)
-    r1 = c.post("/chat", json={"message": "VPN broken"})
+    # non-actionable messages so the case stays in clarifying across both turns
+    # (an actionable issue would correctly force a tool call, not a 2nd question)
+    r1 = c.post("/chat", json={"message": "I'm having some trouble"})
     case_id = r1.json()["case_id"]
 
-    r2 = c.post("/chat", json={"message": "macOS", "case_id": case_id})
+    r2 = c.post("/chat", json={"message": "not sure how to explain it", "case_id": case_id})
     assert r2.json()["case_id"] == case_id
     assert r2.json()["message"] == "Got it, checking now."
 
@@ -142,8 +143,7 @@ def test_get_case_returns_state_and_handoff(persistent_store):
     # drive a turn that investigates then escalates so an escalation_context exists
     llm = MockLLMClient([
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6, tool_name="kb_search",
-                  tool_input={"query": "vpn"}, message=None,
-                  missing_info_source=MissingInfoSource.TOOL),
+                  tool_input={"query": "vpn"}, message=None),
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
                   escalation_reason="needs admin access", message=None),
     ])

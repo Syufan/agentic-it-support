@@ -1,4 +1,4 @@
-from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
+from state.case_state import BudgetMode, CaseState, Phase
 
 
 def test_default_phase_is_intake():
@@ -17,11 +17,6 @@ def test_default_flags_are_false():
     assert case.has_safe_low_risk_guidance is False
     assert case.new_critical_fact_added is False
     assert case.handoff_completed is False
-
-
-def test_default_missing_info_source_is_none():
-    case = CaseState()
-    assert case.missing_info_source == MissingInfoSource.NONE
 
 
 def test_default_counters_are_zero():

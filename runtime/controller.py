@@ -23,7 +23,7 @@ from runtime.diagnosis_policy import (
 from runtime.message_builder import build_messages
 from runtime.transitions import TransitionResult, evaluate_transition
 from runtime.validator import validate_proposal
-from state.case_state import CaseState, MissingInfoSource, Phase, ToolTrace
+from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
 _MAX_INNER_ITERATIONS = 10
@@ -135,7 +135,9 @@ def run_turn(
                     inputs=last_trace.inputs,
                 )
             prev_phase = case.phase
-            case.phase = Phase.INVESTIGATING
+            # a tool call routes through the same transition entry as every other
+            # action; the rule short-circuits it to INVESTIGATING (no manual bypass)
+            _apply_transition(case, evaluate_transition(case, AgentAction.CALL_TOOL))
             if event_log and case.phase != prev_phase:
                 record_phase_transition(event_log, case.case_id, case.confidence, prev_phase.value, case.phase.value)
             continue
@@ -154,7 +156,7 @@ def run_turn(
             if event_log:
                 record_escalation(event_log, case.case_id, case.phase.value, case.confidence, proposal.escalation_reason or "")
 
-        _apply_transition(case, evaluate_transition(case))
+        _apply_transition(case, evaluate_transition(case, proposal.action))
         if event_log and case.phase != prev_phase:
             record_phase_transition(event_log, case.case_id, case.confidence, prev_phase.value, case.phase.value)
 
@@ -199,7 +201,6 @@ def _ask_for_issue_description(
 ) -> str:
     previous_phase = case.phase
     case.phase = Phase.CLARIFYING
-    case.missing_info_source = MissingInfoSource.USER
     case.missing_info = ["issue description"]
     case.clarification_attempts += 1
     if event_log:
@@ -217,7 +218,7 @@ def _force_escalate(case: CaseState, reason: str) -> str:
     _build_escalation_context(case, reason, case.confidence)
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
-    _apply_transition(case, evaluate_transition(case))
+    _apply_transition(case, evaluate_transition(case, AgentAction.ESCALATE))
     msg = (
         "I wasn't able to fully resolve this issue. "
         "I'm connecting you with an IT specialist who will have all the context — "
@@ -235,7 +236,7 @@ def _complete_runtime_handoff(
     _build_escalation_context(case, reason, case.confidence)
     case.handoff_completed = True
     previous_phase = case.phase
-    _apply_transition(case, evaluate_transition(case))
+    _apply_transition(case, evaluate_transition(case, AgentAction.ESCALATE))
     if event_log:
         record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
         if case.phase != previous_phase:
@@ -297,22 +298,7 @@ def _proposal_text(proposal: AgentProposal) -> str:
     )
 
 
-def _derive_missing_info_source(action: AgentAction) -> MissingInfoSource:
-    """Infer where the next missing information comes from, from the action alone.
-
-    The action already encodes who is being asked next, so the runtime derives the
-    source instead of trusting an LLM-reported field: asking the user implies the
-    user holds the missing info; calling a tool implies a tool does.
-    """
-    if action == AgentAction.ASK_USER:
-        return MissingInfoSource.USER
-    if action == AgentAction.CALL_TOOL:
-        return MissingInfoSource.TOOL
-    return MissingInfoSource.NONE
-
-
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
-    case.missing_info_source = _derive_missing_info_source(proposal.action)
     case.missing_info = list(proposal.missing_info)
     if proposal.user_confirmed_resolution is not None:
         case.user_confirmed_resolution = proposal.user_confirmed_resolution

@@ -4,7 +4,7 @@ from llm.client import MockLLMClient
 from agent.proposals import AgentAction, AgentProposal
 from observability.logger import Event, InMemoryEventLog
 from runtime.controller import run_turn
-from state.case_state import CaseState, MissingInfoSource, Phase
+from state.case_state import CaseState, Phase
 from tools.base import BaseTool, ToolResult
 from typing import Any
 
@@ -111,7 +111,7 @@ def test_tool_call_event_recorded():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
@@ -129,7 +129,7 @@ def test_tool_call_event_records_success():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
@@ -141,7 +141,7 @@ def test_phase_transition_event_recorded():
     case = CaseState()
     log = InMemoryEventLog()
     run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info_source=MissingInfoSource.USER, missing_info=["OS"],
+        missing_info=["OS"],
     )]), {}, event_log=log)
 
     transitions = log.of_type("phase_transition")

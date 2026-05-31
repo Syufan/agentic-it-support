@@ -6,7 +6,7 @@ from agent.proposals import AgentAction, AgentProposal
 from observability.logger import InMemoryEventLog
 from runtime.controller import TurnCancelled, _execute_tool, _project_to_state, run_turn
 from runtime.message_builder import LLMInput
-from state.case_state import CaseState, MissingInfoSource, Phase
+from state.case_state import CaseState, Phase
 from tools.base import BaseTool, ToolResult
 
 
@@ -78,34 +78,6 @@ def test_project_does_not_clobber_new_critical_fact_flag():
     assert case.new_critical_fact_added is True
 
 
-# ── missing_info_source is derived by the runtime from the action ─────────────
-# The LLM no longer self-reports a source; the runtime infers it from what the
-# proposed action implies about where the next missing information comes from.
-
-def test_missing_info_source_derived_from_call_tool():
-    case = CaseState()
-    _project_to_state(case, _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search", message=None))
-    assert case.missing_info_source == MissingInfoSource.TOOL
-
-
-def test_missing_info_source_derived_from_ask_user():
-    case = CaseState()
-    _project_to_state(case, _proposal(action=AgentAction.ASK_USER, message="What OS?"))
-    assert case.missing_info_source == MissingInfoSource.USER
-
-
-def test_missing_info_source_none_for_resolve():
-    case = CaseState()
-    _project_to_state(case, _proposal(action=AgentAction.RESOLVE, message="Try restarting."))
-    assert case.missing_info_source == MissingInfoSource.NONE
-
-
-def test_missing_info_source_none_for_escalate():
-    case = CaseState()
-    _project_to_state(case, _proposal(action=AgentAction.ESCALATE, message=None, escalation_reason="hardware"))
-    assert case.missing_info_source == MissingInfoSource.NONE
-
-
 def test_vague_initial_greeting_asks_for_issue_without_llm():
     case = CaseState()
     response = run_turn(case, "hey", MockLLMClient([]), {})
@@ -140,7 +112,7 @@ def test_short_symptom_phrase_still_goes_to_llm():
 
 def _clarify_ask() -> AgentProposal:
     return _proposal(action=AgentAction.ASK_USER, message="Please describe the issue",
-                     missing_info_source=MissingInfoSource.USER, missing_info=["issue description"])
+                     missing_info=["issue description"])
 
 
 def test_repeated_unproductive_clarifying_soft_closes_without_handoff():
@@ -178,7 +150,6 @@ def test_actionable_unknown_app_issue_forces_tool_investigation():
     repeated_question = _proposal(
         action=AgentAction.ASK_USER,
         message="Any error message?",
-        missing_info_source=MissingInfoSource.USER,
         missing_info=["error message"],
     )
     tool_call = _proposal(
@@ -187,7 +158,6 @@ def test_actionable_unknown_app_issue_forces_tool_investigation():
         tool_name="kb_search",
         tool_input={"query": "shadowect vpn website stuck macos"},
         message=None,
-        missing_info_source=MissingInfoSource.TOOL,
     )
     resolve = _proposal(
         action=AgentAction.RESOLVE,
@@ -215,8 +185,7 @@ def test_tool_call_resets_clarification_attempts():
     tools = {"kb_search": MockTool(ToolResult(success=True, data={"hit": 1}))}
     run_turn(case, "my vpn times out", MockLLMClient([
         _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
-                  tool_input={"query": "vpn"}, message=None,
-                  missing_info_source=MissingInfoSource.TOOL),
+                  tool_input={"query": "vpn"}, message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Switch to TCP"),
     ]), tools)
     assert case.clarification_attempts == 0
@@ -233,19 +202,9 @@ def test_vague_greeting_counts_as_a_clarification_attempt():
 def test_phase_transitions_to_clarifying_when_missing_user_info():
     case = CaseState()
     run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info_source=MissingInfoSource.USER,
         missing_info=["OS type"],
     )]), {})
     assert case.phase == Phase.CLARIFYING
-
-
-def test_phase_transitions_to_investigating_when_no_missing_info():
-    case = CaseState()
-    run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info_source=MissingInfoSource.NONE,
-        missing_info=[],
-    )]), {})
-    assert case.phase == Phase.INVESTIGATING
 
 
 def test_phase_transitions_to_resolving_after_high_confidence_resolve():
@@ -270,7 +229,6 @@ def test_tool_call_then_resolve_in_one_turn():
             tool_name="kb_search",
             tool_input={"query": "VPN"},
             message=None,
-            missing_info_source=MissingInfoSource.TOOL,
         ),
         _proposal(action=AgentAction.RESOLVE, confidence=0.9, message="Restart VPN client"),
     ]
@@ -299,7 +257,6 @@ def test_final_tool_call_gets_synthesis_chance_before_budget_escalation():
             tool_name="kb_search",
             tool_input={"query": "shadowrocket connected cannot access google"},
             message=None,
-            missing_info_source=MissingInfoSource.TOOL,
         ),
         _proposal(
             action=AgentAction.RESOLVE,
@@ -367,7 +324,6 @@ def test_service_wide_question_retries_to_status_api():
         tool_name="status_api",
         tool_input={"service": "Salesforce"},
         message=None,
-        missing_info_source=MissingInfoSource.TOOL,
     )
     resolve = _proposal(
         action=AgentAction.RESOLVE,
@@ -389,7 +345,7 @@ def test_tool_trace_recorded():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "VPN"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
@@ -407,7 +363,7 @@ def test_tool_counters_incremented():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={}))
@@ -424,7 +380,7 @@ def test_tool_data_stored_in_facts():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
@@ -439,7 +395,7 @@ def _failing_proposals() -> list:
     return [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
     ]
 
@@ -589,7 +545,7 @@ def test_escalation_context_tool_traces_include_output():
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
                   tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None, missing_info_source=MissingInfoSource.TOOL),
+                  message=None),
         _escalate_proposal(),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
@@ -610,7 +566,6 @@ def test_runtime_budget_escalation_builds_handoff_context():
         tool_calls_current_investigation=5,
         tool_calls_total=5,
         has_safe_low_risk_guidance=False,
-        missing_info_source=MissingInfoSource.NONE,
     )
     response = run_turn(case, "still broken", MockLLMClient([
         _proposal(action=AgentAction.ASK_USER, message="Can you try again?"),
@@ -688,7 +643,6 @@ def test_confidence_updated_from_proposal():
 def test_missing_info_projected_from_proposal():
     case = CaseState()
     run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info_source=MissingInfoSource.USER,
         missing_info=["OS", "VPN version"],
     )]), {})
     assert case.missing_info == ["OS", "VPN version"]
@@ -889,7 +843,6 @@ def test_pre_tool_low_confidence_escalation_retries_with_tool():
         tool_name="kb_search",
         tool_input={"query": "shadowrocket vpn connected cannot visit google websites"},
         message=None,
-        missing_info_source=MissingInfoSource.TOOL,
     )
     resolve = _proposal(
         action=AgentAction.RESOLVE,
@@ -938,8 +891,7 @@ def test_zero_tool_resolve_is_corrected_then_grounded():
     premature = _proposal(action=AgentAction.RESOLVE, confidence=0.7,
                           message="Just reinstall it")
     do_tool = _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
-                        tool_name="kb_search", tool_input={"query": "vpn"}, message=None,
-                        missing_info_source=MissingInfoSource.TOOL)
+                        tool_name="kb_search", tool_input={"query": "vpn"}, message=None)
     resolve = _proposal(action=AgentAction.RESOLVE, confidence=0.7,
                         message="Switch the VPN protocol to TCP")
     tools = {"kb_search": MockTool(ToolResult(success=True, data={"hits": ["use TCP"]}))}

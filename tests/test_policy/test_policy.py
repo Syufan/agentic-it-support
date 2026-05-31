@@ -4,7 +4,7 @@ from agent.proposals import AgentAction, AgentProposal
 from policy.engine import check_business_policy as _check_business_policy
 from policy.engine import find_policy_rules, load_policy_rules
 from runtime.diagnosis_policy import check_diagnosis_policy as check
-from state.case_state import BudgetMode, CaseState, MissingInfoSource, Phase
+from state.case_state import BudgetMode, CaseState, Phase
 
 
 def check_business_policy(case, proposal):
