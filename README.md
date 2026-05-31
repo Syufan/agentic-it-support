@@ -107,9 +107,14 @@ uv run python -m evaluation.runner
 
 ## IT Support Problem
 
-This project focuses on employee-facing IT helpdesk cases: diagnosing common access, connectivity, and service availability issues such as VPN failures, application login problems, MFA/account issues, and suspected service outages.
+This project focuses on employee-facing IT helpdesk triage for a small set of common workplace IT issues.
 
-I chose this problem because these cases are common, repetitive, and often move through a clear support workflow: intake, clarification, investigation, resolution, or escalation. That makes the problem a good fit for an agent with explicit runtime state, tool grounding, and policy-controlled escalation.
+The agent can attempt safe guidance for VPN connectivity troubleshooting, password reset self-service guidance, and service status checks for known incidents.
+
+The agent must escalate or route through policy for high-risk cases such as MFA
+recovery, permission or access grants, and infrastructure or network configuration changes.
+
+I chose this problem because these cases are common, repetitive, and naturally test the boundaries of an agentic system. Some issues can be handled with safe troubleshooting guidance, while others require policy checks, approval, or human escalation. This makes the problem a good fit for explicit runtime state, tool grounding, and policy-controlled resolution versus escalation.
 
 ## Why an Agentic Approach
 
