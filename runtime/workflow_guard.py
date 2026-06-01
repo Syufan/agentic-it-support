@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
-from agent.proposals import AgentProposal
-from policy.engine import check_business_policy
+from agent.proposals import AgentAction, AgentProposal
+from policy.engine import BusinessPolicyDecision, check_business_policy
+from runtime import limits
 from runtime.diagnosis_policy import check_diagnosis_policy
 from runtime.validator import validate_proposal
 from state.case_state import CaseState
@@ -50,10 +51,7 @@ def check_workflow_guard(
             ),
         )
 
-    business_policy = check_business_policy(
-        proposal.action.value,
-        _proposal_text(proposal),
-    )
+    business_policy = _check_business_authorization(case, proposal)
     if not business_policy.allowed:
         return _reject(
             state,
@@ -78,8 +76,28 @@ def _reject(
     return GuardDecision(False, correction=correction)
 
 
+def _check_business_authorization(
+    case: CaseState,
+    proposal: AgentProposal,
+) -> BusinessPolicyDecision:
+    """Run the policy engine with the right text surface per action.
+
+    - escalate: judged on the employee's objective situation (their own words), not
+      the model's escalation_reason — so a request the agent can handle cannot talk
+      its way into a handoff. Exception: once the case tool budget is exhausted, a
+      handoff is the legitimate runtime fallback, authorized regardless of policy.
+    - everything else (resolve): judged on what the model proposes to do, to catch an
+      over-reaching self-service fix.
+    """
+    if proposal.action == AgentAction.ESCALATE:
+        if limits.tool_case_limit_reached(case):
+            return BusinessPolicyDecision(True)
+        return check_business_policy("escalate", _user_conversation_text(case))
+    return check_business_policy(proposal.action.value, _proposal_text(proposal))
+
+
 def _proposal_text(proposal: AgentProposal) -> str:
-    """Free text for business-policy matching.
+    """Free text for resolve-path business-policy matching.
 
     policy/ deliberately does not know AgentProposal's shape; the runtime guard
     extracts the text surface it wants policy rules to evaluate.
@@ -87,8 +105,14 @@ def _proposal_text(proposal: AgentProposal) -> str:
     return " ".join(
         part for part in (
             proposal.message or "",
-            proposal.reasoning_summary,
             proposal.escalation_reason or "",
         )
         if part
+    )
+
+
+def _user_conversation_text(case: CaseState) -> str:
+    """The employee's own words — the objective basis for an escalation decision."""
+    return " ".join(
+        m["content"] for m in case.conversation if m["role"] == "user"
     )

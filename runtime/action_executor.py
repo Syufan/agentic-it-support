@@ -88,7 +88,12 @@ def force_escalate(
     (repeated invalid proposals, provider errors, ...) must not leak to the employee.
     """
     previous_phase = case.phase
-    _build_escalation_context(case, reason, case.confidence)
+    _build_escalation_context(
+        case,
+        _human_safe_escalation_reason(reason),
+        case.confidence,
+        internal_runtime_reason=reason,
+    )
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
     record_escalation(event_log, case.case_id, case.phase.value, case.confidence, reason)
@@ -289,12 +294,14 @@ def _build_escalation_context(
     case: CaseState,
     reason: str | None,
     confidence: float,
+    internal_runtime_reason: str | None = None,
 ) -> None:
     issue_description = next(
         (m["content"] for m in case.conversation if m["role"] == "user"), ""
     )
     case.escalation_context = {
         "escalation_reason": reason,
+        "internal_runtime_reason": internal_runtime_reason,
         "confidence": confidence,
         "issue_description": issue_description,
         "conversation": list(case.conversation),
@@ -312,3 +319,17 @@ def _build_escalation_context(
         "failed_resolutions": list(case.failed_resolutions),
         "resolution_attempts": case.resolution_attempts,
     }
+
+
+def _human_safe_escalation_reason(reason: str) -> str:
+    internal_markers = (
+        "llm provider error",
+        "maximum llm calls",
+        "maximum investigation steps",
+        "repeated invalid",
+        "repeated diagnosis policy violations",
+        "repeated business policy violations",
+    )
+    if any(marker in reason.lower() for marker in internal_markers):
+        return "The agent could not safely complete the investigation and needs human review."
+    return reason

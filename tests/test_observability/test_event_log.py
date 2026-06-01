@@ -153,14 +153,14 @@ def test_escalation_event_recorded():
     case = CaseState(phase=Phase.INVESTIGATING)
     log = InMemoryEventLog()
 
-    run_turn(case, "VPN broken", MockLLMClient([
+    run_turn(case, "my work laptop is infected with malware", MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Needs admin", message=None),
+                  escalation_reason="Suspected malware needs security review", message=None),
     ]), {}, event_log=log)
 
     esc_events = log.of_type("escalation")
     assert len(esc_events) == 1
-    assert esc_events[0].details["reason"] == "Needs admin"
+    assert esc_events[0].details["reason"] == "Suspected malware needs security review"
 
 
 def test_forced_escalation_is_recorded():

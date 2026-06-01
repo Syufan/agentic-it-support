@@ -14,7 +14,6 @@ def check_business_policy(case, proposal):
     text = " ".join(
         part for part in (
             proposal.message or "",
-            proposal.reasoning_summary,
             proposal.escalation_reason or "",
         )
         if part
@@ -41,62 +40,46 @@ def _case(**kwargs) -> CaseState:
     return c
 
 
-# ── premature escalation guard ────────────────────────────────────────────────
+# ── escalation authorization (engine, matched on the employee's own words) ──────
+# Whether a case may be handed off is a business-authority decision in policy/engine,
+# not a keyword match on the model's reason. diag no longer judges it.
 
-def test_escalate_blocked_when_tool_limit_not_reached_and_confidence_above_low():
-    case = _case(tool_calls_total=0)
-    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                         escalation_reason="needs help", message=None)
-    decision = check(case, proposal)
+def test_engine_blocks_escalation_without_human_authorization():
+    # a forgotten-password lockout is agent-authorized — it must not escalate
+    decision = _check_business_policy("escalate", "I forgot my password and got locked out")
     assert not decision.allowed
     assert "premature escalation" in decision.reason
 
 
-def test_escalate_blocked_when_tool_limit_not_reached_even_with_low_confidence():
+def test_engine_blocks_escalation_for_investigable_issue():
+    decision = _check_business_policy("escalate", "my VPN keeps timing out")
+    assert not decision.allowed
+    assert "premature escalation" in decision.reason
+
+
+def test_engine_allows_escalation_for_human_authorized_situation():
+    decision = _check_business_policy("escalate", "I think my work laptop has malware")
+    assert decision.allowed
+    assert decision.matched_rule.action == "handle_security_incident"
+
+
+def test_engine_allows_escalation_for_lost_mfa_device():
+    decision = _check_business_policy("escalate", "I lost my phone with the authenticator, can't get past MFA")
+    assert decision.allowed
+    assert decision.matched_rule.action == "reset_mfa_device"
+
+
+def test_engine_routes_access_grant_escalation_to_approval_not_human():
+    decision = _check_business_policy("escalate", "please grant me software access to Adobe")
+    assert not decision.allowed
+    assert decision.matched_rule.action == "grant_software_access"
+
+
+def test_diagnosis_policy_no_longer_judges_escalation_authority():
+    # diag is pass-through for escalate; authority is the engine's job now
     case = _case(tool_calls_total=1)
     proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.3,
                          escalation_reason="needs help", message=None)
-    decision = check(case, proposal)
-    assert not decision.allowed
-    assert "premature escalation" in decision.reason
-
-
-def test_escalate_allowed_when_tool_case_limit_reached():
-    case = _case(tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE)
-    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                         escalation_reason="needs help", message=None)
-    decision = check(case, proposal)
-    assert decision.allowed
-
-
-def test_escalate_allowed_when_already_in_escalating_phase():
-    case = _case(phase=Phase.ESCALATING, tool_calls_total=0)
-    proposal = _proposal(action=AgentAction.ESCALATE, confidence=0.6,
-                         escalation_reason="needs help", message=None)
-    assert check(case, proposal).allowed
-
-
-def test_escalate_blocked_before_any_tool_for_investigable_issue():
-    case = _case(tool_calls_total=0)
-    proposal = _proposal(
-        action=AgentAction.ESCALATE,
-        confidence=0.3,
-        escalation_reason="VPN connection issue requires further investigation",
-        message=None,
-    )
-    decision = check(case, proposal)
-    assert not decision.allowed
-    assert "policy boundary" in decision.reason
-
-
-def test_escalate_allowed_before_tool_for_direct_handoff_reason():
-    case = _case(tool_calls_total=0)
-    proposal = _proposal(
-        action=AgentAction.ESCALATE,
-        confidence=0.3,
-        escalation_reason="third-party app outside our supported scope",
-        message=None,
-    )
     assert check(case, proposal).allowed
 
 
@@ -187,6 +170,18 @@ def test_business_policy_blocks_direct_access_grant_without_approval():
     assert decision.matched_rule is not None
     assert decision.matched_rule.action == "grant_software_access"
     assert "approval required" in decision.reason
+
+
+def test_business_policy_allows_approval_path_guidance_for_access_grant():
+    decision = _check_business_policy(
+        "resolve",
+        (
+            "I can't grant Snowflake write access directly. Submit an IT portal "
+            "request with business justification; approval is required."
+        ),
+    )
+    assert decision.allowed
+    assert decision.matched_rule.action == "grant_data_access"
 
 
 def test_business_policy_allows_agent_authorized_guidance():

@@ -16,9 +16,30 @@ from runtime.action_executor import (
 )
 from runtime.diagnosis_policy import needs_issue_description
 from runtime.message_builder import build_messages
-from runtime.workflow_guard import GuardState, check_workflow_guard
+from runtime.workflow_guard import GuardState, MAX_CORRECTIONS, check_workflow_guard
 from state.case_state import CaseState
 from tools.base import BaseTool
+
+# Runtime architecture:
+#
+# query_loop
+#   = orchestrates one user turn and controls the inner agent loop
+#
+# message_builder
+#   = builds LLM input from CaseState + correction feedback
+#
+# workflow_guard
+#   = validates the LLM proposal before execution
+#     validator → diagnosis_policy → business_policy
+#
+# action_executor
+#   = executes accepted actions and writes side effects to CaseState
+#
+# transitions
+#   = decides the next Phase from the accepted action and current CaseState
+#
+# Core rule:
+#   LLM proposes. Runtime guards. Executor executes. Transitions move state.
 
 
 class TurnCancelled(Exception):
@@ -34,23 +55,26 @@ def run_turn(
     should_cancel: Callable[[], bool] | None = None,
     settings: Settings | None = None,
 ) -> str:
-    retry_penalty = (settings or Settings()).confidence_retry_penalty
 
+    # Initialize this turn: load retry settings, persist the user message, and reset counters
+    retry_penalty = (settings or Settings()).confidence_retry_penalty
     case.conversation.append({"role": "user", "content": user_message})
     case.tool_calls_this_turn = 0
 
-    # main.py and cli.py both inject an event log; default a throwaway one for the
-    # remaining callers (evaluation, tests) so the recording paths never branch on None.
+    # Initialize per-turn observability
     event_log = event_log or InMemoryEventLog()
     record_turn_start(event_log, case.case_id, case.phase.value, case.confidence)
 
+    # Handle vague first messages without spending an LLM call
     if needs_issue_description(case, user_message):
         return ask_for_issue_description(case, event_log)
 
+    # Initialize proposal-correction state for this turn
     correction: str | None = None
     guard_state = GuardState()
 
     for _ in range(limits.MAX_INNER_ITERATIONS):
+
         # Pre-step runtime guard，case-level hard limit
         _raise_if_cancelled(should_cancel)
         if limits.llm_case_limit_reached(case):
@@ -59,7 +83,16 @@ def run_turn(
         # Agent proposal
         try:
             proposal = _call_agent(case, correction, llm, event_log)
-        except (LLMClientError, ProposalParseError):
+        except ProposalParseError as exc:
+            guard_state.corrections += 1
+            if guard_state.corrections > MAX_CORRECTIONS:
+                return force_escalate(case, "repeated invalid LLM responses", event_log)
+            correction = (
+                f"Your previous response could not be parsed as a valid AgentProposal: {exc}. "
+                "Respond with a single JSON object that matches the required schema."
+            )
+            continue
+        except LLMClientError:
             return force_escalate(case, "LLM provider error during investigation", event_log)
 
         # Interrupt

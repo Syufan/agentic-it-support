@@ -12,22 +12,23 @@ _PROMPTS: dict[Phase, str] = {
     Phase.ESCALATING:    escalating.SYSTEM_PROMPT,
 }
 
-#: how many recent tool results to surface to the LLM, and how much of each
+# Limit tool context sent to the LLM.
 _MAX_TOOL_TRACES_IN_CONTEXT = 3
 _TOOL_OUTPUT_PREVIEW_CHARS = 1000
 
 
 def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
+    
+    # Select the phase-specific system prompt and apply any correction.
     system = _PROMPTS.get(case.phase, investigating.SYSTEM_PROMPT)
-
-    # A correction is a runtime instruction ("your last response was rejected,
-    # do X"), so it belongs in the system prompt, not buried in the user turn.
     if correction:
         system = system + "\n\n[Correction] " + correction
-
+    
+    # Copy conversation history and append the current case snapshot.
     messages = [dict(m) for m in case.conversation]
     observation = _build_observation(case)
 
+    # Attach the snapshot to the latest user turn, or add it as a user message.
     if messages and messages[-1]["role"] == "user":
         messages[-1]["content"] = messages[-1]["content"] + "\n\n" + observation
     else:

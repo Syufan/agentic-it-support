@@ -143,9 +143,9 @@ def test_get_case_returns_state_and_handoff(persistent_store):
     # drive a turn that investigates then escalates so an escalation_context exists
     llm = MockLLMClient([
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6, tool_name="kb_search",
-                  tool_input={"query": "vpn"}, message=None),
+                  tool_input={"query": "malware"}, message=None),
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="needs admin access", message=None),
+                  escalation_reason="suspected malware needs security review", message=None),
     ])
     app = ITSupportWebServer(
         llm=llm,
@@ -154,14 +154,14 @@ def test_get_case_returns_state_and_handoff(persistent_store):
         turn_runner=run_turn,
     ).get_app()
     c = TestClient(app)
-    case_id = c.post("/chat", json={"message": "VPN broken"}).json()["case_id"]
+    case_id = c.post("/chat", json={"message": "my work laptop is infected with malware"}).json()["case_id"]
 
     r = c.get(f"/case/{case_id}")
     assert r.status_code == 200
     body = r.json()
     assert body["case_id"] == case_id
     assert "phase" in body and "is_closed" in body
-    assert body["escalation_context"]["escalation_reason"] == "needs admin access"
+    assert body["escalation_context"]["escalation_reason"] == "suspected malware needs security review"
     assert "conversation" in body["escalation_context"]
 
 

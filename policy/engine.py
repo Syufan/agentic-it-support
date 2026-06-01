@@ -54,15 +54,31 @@ def check_business_policy(
     This layer is decoupled from the agent/state layers: the runtime extracts the
     action and the relevant text from its proposal and passes them in. policy/ only
     knows PolicyRule/BusinessPolicyDecision and its own data file.
+
+    Two actions are governed, with opposite defaults:
+      - resolve:  allowed unless the matched action needs approval/human authority.
+      - escalate: allowed ONLY when the matched action needs human authority. An
+                  unmatched case or an agent-authorized one is a premature handoff —
+                  low confidence is a diagnosis signal, not an escalation trigger.
+
+    Escalation is matched against the employee's own words (the objective situation),
+    not the model's escalation_reason — so a request the agent can handle (e.g. a
+    forgotten-password lockout) cannot talk its way into a handoff.
     """
-    if action != "resolve":
+    if action not in ("resolve", "escalate"):
         return BusinessPolicyDecision(True)
 
     matched = _match_policy_rule(text, rules or load_policy_rules())
+
+    if action == "escalate":
+        return _check_escalation_authorization(matched)
+
     if matched is None or matched.authorization == "agent":
         return BusinessPolicyDecision(True, matched_rule=matched)
 
     if matched.authorization == "approval":
+        if _is_approval_path_guidance(text):
+            return BusinessPolicyDecision(True, matched_rule=matched)
         return BusinessPolicyDecision(
             False,
             f"approval required for policy action '{matched.action}'",
@@ -80,6 +96,39 @@ def check_business_policy(
         (
             "Do not provide this as a self-service resolution. Escalate to human IT "
             "and include the policy boundary in the handoff reason."
+        ),
+        matched,
+    )
+
+
+def _check_escalation_authorization(matched: PolicyRule | None) -> BusinessPolicyDecision:
+    """Governs a handoff request by authority, not by keywords in the model's reason.
+
+    Only an action the policy reserves for a human justifies escalation. Approval-gated
+    work routes through the approval path (not a human handoff), and anything the agent
+    is authorized to do — or that matches no policy at all — must not be escalated.
+    """
+    if matched is not None and matched.authorization == "human":
+        return BusinessPolicyDecision(True, matched_rule=matched)
+
+    if matched is not None and matched.authorization == "approval":
+        return BusinessPolicyDecision(
+            False,
+            f"approval action '{matched.action}' routes through approval, not human escalation",
+            (
+                "Do not escalate to a human for this. Explain the approval path and that "
+                "the agent cannot directly grant the access."
+            ),
+            matched,
+        )
+
+    return BusinessPolicyDecision(
+        False,
+        "premature escalation: no human-authorization policy boundary",
+        (
+            "Escalation is not authorized. Low confidence is a diagnosis signal, not a "
+            "handoff trigger. Continue investigating with a tool, resolve with safe "
+            "knowledge-base guidance, or ask the employee for missing information."
         ),
         matched,
     )
@@ -105,7 +154,25 @@ def _rule_matches_text(rule: PolicyRule, text: str) -> bool:
         case "unlock_account":
             return "unlock" in text and "account" in text
         case "reset_mfa_device":
-            return "mfa" in text and any(word in text for word in ("reset", "re-enroll", "reenroll"))
+            # Match how employees actually describe MFA trouble — they say "lost my
+            # authenticator", rarely the word "reset". Resolve-path messages that are
+            # safe agent guidance ("re-scan the QR code") won't carry these words.
+            return ("mfa" in text or "authenticator" in text) and any(
+                word in text
+                for word in (
+                    "reset", "re-enroll", "reenroll", "lost", "lose", "stolen",
+                    "new phone", "can't get past", "cannot get past", "no backup",
+                )
+            )
+        case "handle_security_incident":
+            return any(
+                word in text
+                for word in (
+                    "malware", "virus", "ransomware", "phishing", "phishing email",
+                    "suspicious link", "weird emails", "compromised", "hacked",
+                    "breach", "stolen laptop", "stolen device",
+                )
+            )
         case "grant_software_access":
             return "grant" in text and "access" in text and "software" in text
         case "grant_data_access":
@@ -116,3 +183,20 @@ def _rule_matches_text(rule: PolicyRule, text: str) -> bool:
             return any(word in text for word in ("vpn gateway", "network hardware", "router config"))
         case _:
             return False
+
+
+def _is_approval_path_guidance(text: str) -> bool:
+    lowered = text.lower()
+    has_approval_path = "approval" in lowered or "it portal" in lowered or "request" in lowered
+    has_direct_grant_denial = any(
+        marker in lowered
+        for marker in (
+            "can't grant",
+            "cannot grant",
+            "can’t grant",
+            "not able to grant",
+            "may not grant",
+            "do not grant",
+        )
+    )
+    return has_approval_path and has_direct_grant_denial
