@@ -61,15 +61,6 @@ def check_diagnosis_policy(
     # (distinct successful tool sources), so this gate is what authorizes the RESOLVE
     # action that drives RESOLVING. Already in RESOLVING = confirmation, not re-gated.
     if proposal.action == AgentAction.RESOLVE and case.phase != Phase.RESOLVING:
-        if _vpn_timeout_resolution_missing_environment(case):
-            return DiagnosisPolicyDecision(
-                False,
-                "vpn environment context is missing before resolution",
-                (
-                    "Do not resolve the VPN timeout yet. Ask for the employee's "
-                    "device/OS and VPN client, or use the existing answer if already provided."
-                ),
-            )
         if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
@@ -151,26 +142,6 @@ _CONTEXT_MARKERS = {
     "google",
 }
 
-_VPN_ENVIRONMENT_MARKERS = {
-    "anyconnect",
-    "cisco",
-    "client",
-    "globalprotect",
-    "mac",
-    "macos",
-    "windows",
-}
-
-_VPN_TIMEOUT_MARKERS = {
-    "timed out",
-    "timing out",
-    "timeout",
-    "cannot connect",
-    "can't connect",
-    "cant connect",
-    "unable to connect",
-}
-
 def needs_issue_description(case: CaseState, user_message: str) -> bool:
     if case.phase != Phase.INTAKE:
         return False
@@ -208,15 +179,6 @@ def has_usable_issue_description(case: CaseState) -> bool:
     return has_symptom and has_app_or_service and has_context
 
 
-def _vpn_timeout_resolution_missing_environment(case: CaseState) -> bool:
-    text = _conversation_text(case)
-    if "vpn" not in text:
-        return False
-    if not any(marker in text for marker in _VPN_TIMEOUT_MARKERS):
-        return False
-    return not any(marker in text for marker in _VPN_ENVIRONMENT_MARKERS)
-
-
 # ── §2. Escalation gating ──────────────────────────────────────────────────────
 # Removed. Handoff authorization is a business-authority decision and now lives in
 # policy/engine.py (check_business_policy on the ESCALATE action), matched against the
@@ -238,14 +200,6 @@ def _tool_case_limit_question(case: CaseState, proposal: AgentProposal) -> bool:
 
 # ── Shared text helpers ────────────────────────────────────────────────────────
 # Trivial string utilities used across the sections above.
-
-def _conversation_text(case: CaseState) -> str:
-    return " ".join(
-        m["content"].lower()
-        for m in case.conversation
-        if m["role"] == "user"
-    )
-
 
 def _normalize(text: str) -> str:
     return _strip_punctuation(" ".join(text.lower().strip().split()))

@@ -84,27 +84,16 @@ def test_resolve_allowed_with_sufficient_confidence():
     ).allowed
 
 
-def test_vpn_timeout_resolve_blocked_until_environment_context_exists():
+def test_diagnosis_policy_does_not_dictate_vpn_resolution_method():
+    # Asking for device/OS before resolving a VPN timeout is a diagnostic-method
+    # choice for the LLM (guided by prompts), not a runtime gate. diag only enforces
+    # evidence grounding via the confidence threshold.
     case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
     case.conversation = [
         {"role": "user", "content": "The company VPN keeps timing out when I try to connect."},
     ]
-    decision = check_diagnosis_policy(
-        case,
-        _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app."),
-    )
-    assert decision.allowed is False
-    assert "vpn environment" in decision.reason.lower()
-
-
-def test_vpn_timeout_resolve_allowed_with_environment_context():
-    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
-    case.conversation = [
-        {"role": "user", "content": "The company VPN keeps timing out on macOS with Cisco AnyConnect."},
-    ]
     assert check_diagnosis_policy(
-        case,
-        _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app."),
+        case, _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app.")
     ).allowed
 
 

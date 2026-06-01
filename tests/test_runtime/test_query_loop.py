@@ -872,17 +872,20 @@ def test_known_incident_followup_can_remain_resolving_without_forced_escalation(
     assert case.handoff_completed is False
 
 
-def test_vpn_timeout_resolution_requires_user_environment_context():
+def test_vpn_timeout_grounded_resolution_is_allowed():
+    # Once grounded in tool evidence (confidence at the threshold), a VPN resolution
+    # is allowed. Whether to ask for device/OS first is the LLM's method choice
+    # (prompt-guided), not a runtime gate.
     case = CaseState(phase=Phase.INVESTIGATING)
     case.conversation = [{"role": "user", "content": "The company VPN keeps timing out when I try to connect."}]
     case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={"results": ["VPN guide"]}, success=True)]
     case.tool_calls_total = 1
     case.confidence = 0.35
-    premature = _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app.")
-    ask = _proposal(action=AgentAction.ASK_USER, message="What device and VPN client are you using?")
-    response = run_turn(case, "same issue", MockLLMClient([premature, ask]), {})
-    assert response == "What device and VPN client are you using?"
-    assert case.phase == Phase.CLARIFYING
+    resolve = _proposal(action=AgentAction.RESOLVE, message="Restart the VPN client and switch the server region to Auto.")
+    response = run_turn(case, "same issue", MockLLMClient([resolve]), {})
+    assert "restart the vpn client" in response.lower()
+    assert case.phase == Phase.RESOLVING
+    assert case.handoff_completed is False
 
 
 def test_access_grant_approval_path_resolution_is_allowed():
