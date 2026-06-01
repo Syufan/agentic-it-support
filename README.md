@@ -212,11 +212,13 @@ LLM proposal → workflow guard → policy check → action execution → state 
 
 ## Future Improvements
 
-With more time, I would improve evaluation, confidence calibration, and policy routing.
+With more time, I would improve evaluation, confidence calibration, case grounding, and policy routing.
 
 The current evaluation checks final outcomes and basic runtime behavior. A stronger version would also score the full control path: action sequence, tool choice, policy compliance, and whether the agent avoided unnecessary clarification or escalation.
 
 The current confidence score is a simple evidence-based heuristic from successful tool results. I would calibrate it with labeled support cases and account for evidence quality, freshness, and relevance.
+
+I would also make case grounding more explicit in state. A production version could track fields such as affected target, symptom, environment, and whether the target is unknown, inferred, or confirmed. I did not implement the full grounding state in this prototype because it would require changes to the proposal schema, prompt format, state update logic, ambiguity handling, and tests. Instead, this version uses the existing CaseState, prompt guidance, and a minimum completeness gate before RESOLVE to prevent vague issues from becoming fake grounded answers.
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
 
