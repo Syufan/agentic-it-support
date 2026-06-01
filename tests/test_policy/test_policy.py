@@ -112,6 +112,7 @@ def test_resolve_blocked_when_no_tools_called_even_with_high_confidence():
 def test_resolve_allowed_once_confidence_clears_the_bar():
     # Model B: the gate is evidence-based confidence, not the tool-call counter.
     case = _case(confidence=0.35)
+    case.conversation = [{"role": "user", "content": "my vpn keeps timing out"}]
     proposal = _proposal(action=AgentAction.RESOLVE, confidence=0.3, message="Try this")
     assert check(case, proposal).allowed
 

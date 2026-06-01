@@ -65,8 +65,9 @@ def test_diagnosis_policy_is_pass_through_for_escalation():
 
 
 def test_resolve_blocked_without_evidence():
-    # no successful tool source → confidence 0 → below the resolve bar → blocked
+    # target is named, but no successful tool source → confidence 0 → below the bar → blocked
     case = _case(phase=Phase.INVESTIGATING, confidence=0.0)
+    case.conversation = [{"role": "user", "content": "my vpn keeps timing out"}]
     decision = check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, confidence=0.7, message="Try this"),
@@ -78,9 +79,36 @@ def test_resolve_blocked_without_evidence():
 def test_resolve_allowed_with_sufficient_confidence():
     # confidence at/above the bar (≈ one successful source) authorizes the fix
     case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [{"role": "user", "content": "my vpn keeps timing out"}]
     assert check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, message="Try this"),
+    ).allowed
+
+
+def test_resolve_blocked_without_an_identified_target():
+    # the new minimum-completeness gate: a vague "I can't connect" names no app/service/
+    # device/network, so a fix is not yet possible — clarify instead of resolving.
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.7)
+    case.conversation = [{"role": "user", "content": "I can't connect."}]
+    decision = check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.RESOLVE, message="Try restarting."),
+    )
+    assert decision.allowed is False
+    assert "no affected app/service/device/network" in decision.reason
+
+
+def test_resolve_allowed_once_target_is_named():
+    # a named target ("VPN") clears the completeness gate; grounded confidence allows resolve
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [
+        {"role": "user", "content": "I can't connect."},
+        {"role": "user", "content": "I mean the company VPN, it keeps timing out."},
+    ]
+    assert check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.RESOLVE, message="Switch the server region to Auto."),
     ).allowed
 
 
@@ -129,6 +157,7 @@ def test_tool_case_limit_reached_allows_resolution_or_escalation_not_more_tools_
         tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
         confidence=0.6,  # evidence gathered → resolve is authorized
     )
+    case.conversation = [{"role": "user", "content": "my vpn keeps timing out"}]
     assert check_diagnosis_policy(
         case,
         _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Try this"),

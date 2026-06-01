@@ -35,8 +35,19 @@ def check_diagnosis_policy(
             ),
         )
 
-    # RESOLVE requires evidence-based confidence before entering RESOLVING.
+    # RESOLVE requires a minimally complete case before entering RESOLVING.
     if proposal.action == AgentAction.RESOLVE and case.phase != Phase.RESOLVING:
+       # A resolution needs an identified affected target.
+        if not _names_affected_target(case):
+            return DiagnosisPolicyDecision(
+                False,
+                "resolve blocked: no affected app/service/device/network identified yet",
+                (
+                    "Don't resolve yet — the case hasn't identified which app, service, "
+                    "device, or network is affected. A generic answer is not a resolution. "
+                    "Ask the employee which specific system they mean."
+                ),
+            )
         if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
@@ -48,6 +59,28 @@ def check_diagnosis_policy(
             )
 
     return DiagnosisPolicyDecision(True)
+
+
+# Target nouns required before resolution; verbs like "connect" are not enough.
+_AFFECTED_TARGET = re.compile(
+    r"\b("
+    r"app|apps|application|applications|software|program|browser|website|site|web|portal|"
+    r"dashboard|email|inbox|mailbox|account|password|"
+    r"network|wifi|wi-fi|internet|ethernet|vpn|server|gateway|database|db|"
+    r"computer|laptop|desktop|machine|pc|mac|macbook|phone|iphone|android|ipad|tablet|"
+    r"printer|monitor|screen|display|keyboard|mouse|headset|webcam|camera|device|hardware|drive|disk|"
+    r"okta|salesforce|snowflake|grafana|github|aws|jenkins|slack|zoom|jira|confluence|adobe|gmail|outlook|teams|shadowrocket|google"
+    r")\b"
+)
+
+
+def _names_affected_target(case: CaseState) -> bool:
+    """True once the employee has named some affected app/service/device/network.
+    Minimum case completeness for a resolution — not a diagnostic-method rule."""
+    text = " ".join(
+        m["content"].lower() for m in case.conversation if m["role"] == "user"
+    )
+    return bool(_AFFECTED_TARGET.search(text))
 
 
 # Vague first messages can be handled without an LLM call.
