@@ -16,9 +16,7 @@ def build_router(
     store: SessionStore,
     turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
 ) -> APIRouter:
-    """Wire HTTP routes to the request-handling functions below. The router only
-    does dispatch; the actual flow lives in module-level functions so it can be
-    tested directly and lifted into its own service module later."""
+    """Build API routes and inject runtime dependencies."""
     router = APIRouter()
 
     @router.get("/health")
@@ -38,18 +36,17 @@ def build_router(
     return router
 
 
-# ── request-handling logic ────────────────────────────────────────────────────
-# Plain functions (no router/closure capture): the dependencies are passed in,
-# so this flow is independent of the route declarations above.
+# Request handling helpers.
 
 def resolve_or_create_case(store: SessionStore, case_id: str | None) -> CaseState:
-    """The case this request operates on: an existing one by id, or a fresh one."""
+    """Return an existing case, or create a new one."""
     if case_id:
         return require_case(store, case_id)
     return store.create()
 
 
 def require_case(store: SessionStore, case_id: str) -> CaseState:
+    # 404 when the requested case does not exist.
     case = store.get(case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="case not found")
@@ -63,6 +60,7 @@ def run_chat_turn(
     tools: dict[str, BaseTool],
     turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
 ) -> str:
+    # Convert LLM failures into HTTP errors.
     try:
         return turn_runner(case, message, llm, tools)
     except LLMClientError as exc:
@@ -70,6 +68,7 @@ def run_chat_turn(
 
 
 def to_chat_response(case: CaseState, message: str) -> ChatResponse:
+    # Map case state to chat response DTO.
     return ChatResponse(
         case_id=case.case_id,
         message=message,
@@ -79,6 +78,7 @@ def to_chat_response(case: CaseState, message: str) -> ChatResponse:
 
 
 def to_case_view(case: CaseState) -> CaseView:
+    # Map case state to case view DTO.
     return CaseView(
         case_id=case.case_id,
         phase=case.phase.value,

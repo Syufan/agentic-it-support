@@ -16,8 +16,7 @@ class Event:
 
 class InMemoryEventLog:
     def __init__(self, max_events: int | None = None) -> None:
-        # max_events=None keeps the log unbounded; a positive cap turns it into a
-        # ring buffer that drops the oldest events so it can't grow without limit.
+        # Optional bounded in-memory event buffer.
         self._events: deque[Event] = deque(maxlen=max_events)
 
     def record(self, event: Event) -> None:
@@ -31,8 +30,6 @@ class InMemoryEventLog:
 
 
 # ── helpers called by the controller ─────────────────────────────────────────
-# These take raw scalars (case_id / phase / confidence), not a CaseState, so the
-# observability layer has no dependency on the domain. The runtime extracts them.
 
 def record_turn_start(
     log: InMemoryEventLog,

@@ -1,9 +1,4 @@
-"""Parse raw LLM text into the domain proposal.
-
-This lives in the agent layer, not the transport layer: turning provider text
-into an `AgentProposal` is domain knowledge. `llm/` stays schema-agnostic and
-receives this function via `response_parser` injection.
-"""
+"""Parse raw LLM output into an AgentProposal."""
 
 import json
 from json import JSONDecodeError
@@ -14,14 +9,11 @@ from agent.proposals import AgentProposal
 
 
 class ProposalParseError(Exception):
-    """The model's text could not be turned into a valid AgentProposal.
-
-    A domain-level error (about proposal validity), distinct from the llm
-    transport-level errors, so the agent layer owns it and depends on nothing.
-    """
+    """Raised when LLM output is not a valid AgentProposal."""
 
 
 def parse_proposal(raw: str) -> AgentProposal:
+    # Parse JSON and validate it against the proposal schema.
     try:
         return AgentProposal.model_validate(json.loads(raw))
     except JSONDecodeError as exc:

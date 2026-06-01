@@ -7,8 +7,7 @@ from typing import Generic, TypeVar
 
 from openai import OpenAI, OpenAIError, PermissionDeniedError
 
-#: The parsed domain object a client yields. The transport layer stays agnostic
-#: about its shape; callers bind it (e.g. to AgentProposal) via response_parser.
+# Parsed response type returned by the LLM client.
 T = TypeVar("T")
 
 _MS_PER_SECOND = 1000
@@ -17,9 +16,7 @@ _LATENCY_ROUND_DP = 2
 
 @dataclass
 class LLMInput:
-    """The input contract for an LLM client: a system prompt plus the message
-    list. Lives here (the transport layer) so callers like message_builder
-    construct it; the client no longer reaches back into runtime for its type."""
+    """LLM request payload."""
     system: str
     messages: list[dict[str, str]]
 
@@ -33,7 +30,7 @@ class LLMCallStats:
 
 
 class BaseLLMClient(ABC, Generic[T]):
-    #: stats from the most recent call, or None if this client never tracks them
+    # Stats from the most recent LLM call, when available.
     last_stats: LLMCallStats | None = None
 
     @abstractmethod
@@ -88,7 +85,8 @@ class RealLLMClient(BaseLLMClient[T]):
             "messages": [{"role": "system", "content": llm_input.system}, *llm_input.messages],
             "response_format": {"type": "json_object"},
         }
-        # only set temperature when configured; otherwise let the provider default apply
+
+        # Leave temperature unset unless explicitly configured.
         if self._temperature is not None:
             create_kwargs["temperature"] = self._temperature
         try:
@@ -109,6 +107,7 @@ class RealLLMClient(BaseLLMClient[T]):
 
 
 def _stats_from(response, latency_ms: float) -> LLMCallStats:
+    # Convert provider usage data into runtime stats.
     usage = getattr(response, "usage", None)
     return LLMCallStats(
         prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,

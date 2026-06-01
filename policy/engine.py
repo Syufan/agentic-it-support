@@ -22,6 +22,7 @@ class BusinessPolicyDecision:
 
 
 def load_policy_rules(path: Path = _POLICY_FILE) -> list[PolicyRule]:
+    # Load policy rules from the JSON policy source.
     data = json.loads(path.read_text(encoding="utf-8"))
     return [
         PolicyRule(
@@ -35,6 +36,7 @@ def load_policy_rules(path: Path = _POLICY_FILE) -> list[PolicyRule]:
 
 
 def find_policy_rules(query: str, path: Path = _POLICY_FILE) -> list[PolicyRule]:
+    # Search policy rules by action or description.
     normalized = query.strip().lower()
     if not normalized:
         return load_policy_rules(path)
@@ -49,33 +51,21 @@ def check_business_policy(
     text: str,
     rules: list[PolicyRule] | None = None,
 ) -> BusinessPolicyDecision:
-    """Validate business authorization rules for a proposed action.
-
-    This layer is decoupled from the agent/state layers: the runtime extracts the
-    action and the relevant text from its proposal and passes them in. policy/ only
-    knows PolicyRule/BusinessPolicyDecision and its own data file.
-
-    Two actions are governed, with opposite defaults:
-      - resolve:  allowed unless the matched action needs approval/human authority.
-      - escalate: allowed ONLY when the matched action needs human authority. An
-                  unmatched case or an agent-authorized one is a premature handoff —
-                  low confidence is a diagnosis signal, not an escalation trigger.
-
-    Escalation is matched against the employee's own words (the objective situation),
-    not the model's escalation_reason — so a request the agent can handle (e.g. a
-    forgotten-password lockout) cannot talk its way into a handoff.
-    """
+    """Check whether a proposed resolve/escalate action is authorized."""
     if action not in ("resolve", "escalate"):
         return BusinessPolicyDecision(True)
 
     matched = _match_policy_rule(text, rules or load_policy_rules())
 
+    # Escalation is allowed only for human-authorized policy actions.
     if action == "escalate":
         return _check_escalation_authorization(matched)
-
+    
+    # Agent-authorized or unmatched resolve actions are allowed.
     if matched is None or matched.authorization == "agent":
         return BusinessPolicyDecision(True, matched_rule=matched)
 
+    # Approval-gated actions must explain the approval path, not claim direct grant.
     if matched.authorization == "approval":
         if _is_approval_path_guidance(text):
             return BusinessPolicyDecision(True, matched_rule=matched)
@@ -89,7 +79,8 @@ def check_business_policy(
             ),
             matched,
         )
-
+    
+    # Human-only actions must not be resolved as self-service.
     return BusinessPolicyDecision(
         False,
         f"human approval required for policy action '{matched.action}'",
@@ -102,12 +93,7 @@ def check_business_policy(
 
 
 def _check_escalation_authorization(matched: PolicyRule | None) -> BusinessPolicyDecision:
-    """Governs a handoff request by authority, not by keywords in the model's reason.
-
-    Only an action the policy reserves for a human justifies escalation. Approval-gated
-    work routes through the approval path (not a human handoff), and anything the agent
-    is authorized to do — or that matches no policy at all — must not be escalated.
-    """
+    """Authorize escalation by matched policy authority."""
     if matched is not None and matched.authorization == "human":
         return BusinessPolicyDecision(True, matched_rule=matched)
 
@@ -138,6 +124,7 @@ def _match_policy_rule(
     text: str,
     rules: list[PolicyRule],
 ) -> PolicyRule | None:
+    # Return the first policy rule that matches the text.
     lowered = text.lower()
     for rule in rules:
         if _rule_matches_text(rule, lowered):
@@ -146,6 +133,7 @@ def _match_policy_rule(
 
 
 def _rule_matches_text(rule: PolicyRule, text: str) -> bool:
+    # Lightweight keyword matcher for the mock policy engine.
     action = rule.action.lower()
     if action in text:
         return True
@@ -186,6 +174,7 @@ def _rule_matches_text(rule: PolicyRule, text: str) -> bool:
 
 
 def _is_approval_path_guidance(text: str) -> bool:
+    # Approval guidance must include both the path and a direct-grant denial.
     lowered = text.lower()
     has_approval_path = "approval" in lowered or "it portal" in lowered or "request" in lowered
     has_direct_grant_denial = any(
