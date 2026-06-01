@@ -12,28 +12,22 @@ class AgentAction(str, Enum):
 
 
 class AgentProposal(BaseModel):
-    """Structured proposal returned by the LLM each turn.
-
-    The runtime validates this object, projects selected fields into CaseState,
-    and then evaluates deterministic transition rules.
-    The LLM proposes; the Runtime decides and executes.
-    """
+    """Structured action proposal returned by the LLM."""
 
     action: AgentAction
 
-    # User communication
+    # User-facing response or question.
     message: str | None = None
 
-    # Missing info description (the runtime derives the *source* from `action`).
+    # Missing information the proposal wants to collect.
     missing_info: list[str] = Field(default_factory=list)
 
-    # Tool call
+    # Tool request fields.
     tool_name: str | None = None
     tool_input: dict[str, Any] = Field(default_factory=dict)
 
-    # The LLM's reading of the user's reply (the only proposal-carried signal the
-    # runtime still trusts, because interpreting natural language is the model's job).
+    # LLM interpretation of whether the user confirmed the fix worked.
     user_confirmed_resolution: bool | None = None
 
-    # Escalation
+    # Human handoff reason.
     escalation_reason: str | None = None

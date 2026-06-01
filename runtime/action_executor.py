@@ -16,8 +16,7 @@ from runtime.transitions import TransitionResult, evaluate_transition
 from state.case_state import CaseState, Phase, ToolTrace
 from tools.base import BaseTool, ToolResult
 
-# Single source for the handoff wording, shared by the escalation and terminal
-# paths so the copies can't drift apart.
+# Shared handoff wording for all escalation paths.
 _HANDOFF_TAIL = (
     "I'm connecting you with an IT specialist who will have all the context — "
     "you won't need to repeat yourself."
@@ -40,14 +39,14 @@ def run_accepted_action(
     retry_penalty: float,
     event_log: InMemoryEventLog,
 ) -> ActionOutcome:
+    # Project proposal fields into case state.
     _project_to_state(case, proposal)
-
-    # Confidence is evidence-based, so it must be computed AFTER a tool runs (the new
-    # source has to count). For terminal actions there's no new evidence this step, so
-    # compute from the traces already on the case.
+    
+    # Tool actions add new evidence before confidence is recomputed.
     if proposal.action == AgentAction.CALL_TOOL:
         return _run_tool_action(case, proposal, tool_registry, retry_penalty, event_log)
-
+    
+    # Terminal actions use the evidence already recorded on the case.
     case.confidence = compute_confidence(case, retry_penalty)
     return _run_terminal_action(case, proposal, event_log)
 
@@ -81,12 +80,7 @@ def force_escalate(
     reason: str,
     event_log: InMemoryEventLog,
 ) -> str:
-    """Runtime-initiated handoff: build context, hand off, and close — recording
-    the escalation. Used both when the runtime gives up (budget / provider / loop
-    limits) and when a transition lands in ESCALATING before the agent completed
-    the handoff. The user-facing message stays generic on purpose: internal reasons
-    (repeated invalid proposals, provider errors, ...) must not leak to the employee.
-    """
+    """Runtime-initiated handoff with a generic user-facing message."""
     previous_phase = case.phase
     _build_escalation_context(
         case,
@@ -112,9 +106,12 @@ def _run_tool_action(
     retry_penalty: float,
     event_log: InMemoryEventLog,
 ) -> ActionOutcome:
+    # Tool use means the case made progress.
     case.clarification_attempts = 0
+
+    # Execute tool and recompute confidence from the new evidence.
     _execute_tool(case, proposal, tool_registry)
-    case.confidence = compute_confidence(case, retry_penalty)  # reflect the new source
+    case.confidence = compute_confidence(case, retry_penalty)
     last_trace = case.tool_traces[-1]
     record_tool_call(
         event_log,
@@ -139,9 +136,11 @@ def _run_terminal_action(
 ) -> ActionOutcome:
     prev_phase = case.phase
 
+    # Track attempted fixes.
     if proposal.action == AgentAction.RESOLVE:
         case.resolution_attempts += 1
 
+    # Agent-requested escalation builds handoff context before transitioning.
     if proposal.action == AgentAction.ESCALATE:
         _build_escalation_context(case, proposal.escalation_reason, case.confidence)
         case.handoff_completed = True
@@ -157,6 +156,7 @@ def _run_terminal_action(
     _apply_transition(case, evaluate_transition(case, proposal.action))
     _record_phase_if_changed(case, prev_phase, event_log)
 
+    # Safety fallback if a transition reaches ESCALATING without a handoff.
     if case.phase == Phase.ESCALATING and not case.handoff_completed:
         return ActionOutcome(
             continue_loop=False,
@@ -167,6 +167,7 @@ def _run_terminal_action(
             ),
         )
 
+    # Soft-close repeated vague clarification loops.
     _track_clarification_attempt(case, proposal)
     if _is_unproductive_clarification(case, proposal) and limits.clarification_limit_reached(case):
         return ActionOutcome(continue_loop=False, message=_soft_close(case))
@@ -179,9 +180,7 @@ def _run_terminal_action(
 # ── 3. Terminal helpers ────────────────────────────────────────────────────────
 
 def _track_clarification_attempt(case: CaseState, proposal: AgentProposal) -> None:
-    """Count consecutive unproductive clarifying turns; reset to zero the moment the
-    case makes progress (a tool call, a resolution, or a usable issue description).
-    Mutates `case.clarification_attempts` — kept separate from the soft-close check."""
+    """Track consecutive unproductive clarification attempts."""
     if _is_unproductive_clarification(case, proposal):
         case.clarification_attempts += 1
     else:
@@ -189,8 +188,7 @@ def _track_clarification_attempt(case: CaseState, proposal: AgentProposal) -> No
 
 
 def _is_unproductive_clarification(case: CaseState, proposal: AgentProposal) -> bool:
-    """A clarifying question that can't move the case forward: we're still pre-tool
-    in intake/clarifying and the employee still hasn't given a usable issue."""
+    """Return true when clarification has not produced a usable issue."""
     return (
         proposal.action == AgentAction.ASK_USER
         and _stuck_clarifying(case)
@@ -199,10 +197,12 @@ def _is_unproductive_clarification(case: CaseState, proposal: AgentProposal) -> 
 
 
 def _stuck_clarifying(case: CaseState) -> bool:
+    # Still pre-tool and waiting for a usable issue.
     return case.phase in (Phase.INTAKE, Phase.CLARIFYING) and case.tool_calls_total == 0
 
 
 def _soft_close(case: CaseState) -> str:
+    # Close vague requests that did not produce enough issue detail.
     case.phase = Phase.CLOSED
     msg = (
         "I don't have enough information to diagnose an IT issue yet, so I'll close "
@@ -214,6 +214,7 @@ def _soft_close(case: CaseState) -> str:
 
 
 def _format_response(proposal: AgentProposal, confidence: float) -> str:
+    # Format the final user-facing response.
     if proposal.action == AgentAction.ESCALATE:
         reason = (proposal.escalation_reason or "").strip()
         if reason:
@@ -236,6 +237,7 @@ def _execute_tool(
     proposal: AgentProposal,
     tool_registry: dict[str, BaseTool],
 ) -> None:
+    # Run the requested tool, or record a failed trace if unavailable.
     tool_name = proposal.tool_name or ""
     tool = tool_registry.get(tool_name)
 
@@ -244,6 +246,7 @@ def _execute_tool(
     else:
         result = tool.run(proposal.tool_input)
 
+    # Store the tool trace and expose the result as case facts.
     case.tool_traces.append(ToolTrace(
         tool_name=tool_name,
         inputs=proposal.tool_input,
@@ -257,6 +260,7 @@ def _execute_tool(
     else:
         case.facts[f"{tool_name}_error"] = result.error or "unknown error"
 
+    # Update turn-level and case-level tool budgets.
     case.tool_calls_this_turn += 1
     case.tool_calls_total += 1
 
@@ -264,12 +268,14 @@ def _execute_tool(
 # ── 5. State / transition helpers ──────────────────────────────────────────────
 
 def _project_to_state(case: CaseState, proposal: AgentProposal) -> None:
+    # Copy proposal state fields onto the case.
     case.missing_info = list(proposal.missing_info)
     if proposal.user_confirmed_resolution is not None:
         case.user_confirmed_resolution = proposal.user_confirmed_resolution
 
 
 def _apply_transition(case: CaseState, result: TransitionResult) -> None:
+    # Apply the state-machine decision.
     case.phase = result.next_phase
 
 
@@ -278,6 +284,7 @@ def _record_phase_if_changed(
     previous_phase: Phase,
     event_log: InMemoryEventLog,
 ) -> None:
+    # Record phase transitions only when the phase actually changed.
     if case.phase != previous_phase:
         record_phase_transition(
             event_log,
@@ -296,6 +303,7 @@ def _build_escalation_context(
     confidence: float,
     internal_runtime_reason: str | None = None,
 ) -> None:
+    # Package case context for human handoff.
     issue_description = next(
         (m["content"] for m in case.conversation if m["role"] == "user"), ""
     )
@@ -322,6 +330,7 @@ def _build_escalation_context(
 
 
 def _human_safe_escalation_reason(reason: str) -> str:
+    # Hide internal runtime failure reasons from the user-facing handoff.
     internal_markers = (
         "llm provider error",
         "maximum llm calls",

@@ -1,16 +1,4 @@
-"""Correctable "is this a sensible next step?" guards for an agent proposal.
-
-`check_diagnosis_policy` runs the guards and returns the first rejection (a reason
-plus a correction the agent is re-prompted with), or an allow. It governs only
-*outcomes and authority* — it never decides diagnostic *method* (which tool to call,
-whether to re-ask, what order). That is the LLM's job, guided by the phase prompts.
-
-Three concerns live here, tagged §1–§3. Only §1 truly belongs; the other two are
-future-extraction candidates:
-  §1 Diagnosis workflow    — the genuine owner
-  §2 Escalation gating      — when handoff is authorized        → escalation_policy.py
-  §3 Runtime-limit reaction — what to do once tool budget is spent → workflow_guard
-"""
+"""Diagnosis-level guards for evidence grounding and runtime budget behavior."""
 
 from dataclasses import dataclass
 import re
@@ -34,12 +22,8 @@ def check_diagnosis_policy(
     case: CaseState,
     proposal: AgentProposal,
 ) -> DiagnosisPolicyDecision:
-    """Return the first guard rejection (reason + correction) or an allow. Pure
-    decision: no schema validation, no tool execution, no user-facing responses.
-    Checks run §3 → §2 → §1, but they are mutually exclusive by action so order
-    doesn't matter; the §N numbering tracks ownership, not execution order.
-    """
-    # §3 — tool budget spent: stop asking, force a decision now
+    """Return the first diagnosis-policy rejection, or allow the proposal."""
+    # Once tool budget is exhausted, stop ordinary clarification loops.
     if _tool_case_limit_question(case, proposal):
         return DiagnosisPolicyDecision(
             False,
@@ -51,16 +35,19 @@ def check_diagnosis_policy(
             ),
         )
 
-    # §2 — escalation authorization now lives in policy/engine.py
-    # (check_business_policy on the ESCALATE action, matched against the employee's
-    # own words). The runtime no longer keyword-scans the model's escalation_reason:
-    # whether a case may be handed off is a business-authority decision, not a phrase
-    # match. See runtime/workflow_guard.py for the wiring.
-
-    # §1 — a resolution must be grounded in evidence. Confidence is evidence-based
-    # (distinct successful tool sources), so this gate is what authorizes the RESOLVE
-    # action that drives RESOLVING. Already in RESOLVING = confirmation, not re-gated.
+    # RESOLVE requires a minimally complete case before entering RESOLVING.
     if proposal.action == AgentAction.RESOLVE and case.phase != Phase.RESOLVING:
+       # A resolution needs an identified affected target.
+        if not _names_affected_target(case):
+            return DiagnosisPolicyDecision(
+                False,
+                "resolve blocked: no affected app/service/device/network identified yet",
+                (
+                    "Don't resolve yet — the case hasn't identified which app, service, "
+                    "device, or network is affected. A generic answer is not a resolution. "
+                    "Ask the employee which specific system they mean."
+                ),
+            )
         if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
@@ -71,18 +58,32 @@ def check_diagnosis_policy(
                 ),
             )
 
-    # Approval-path handling for access-grant requests is NOT a runtime method rule:
-    # the phase prompts steer the agent to explain the approval path, and
-    # policy/engine.py enforces the authority boundary on the resolve/escalate action.
-
     return DiagnosisPolicyDecision(True)
 
 
-# ── §1. Diagnosis workflow ─────────────────────────────────────────────────────
-# Vague-intake and usable-issue-description checks. (has_usable_issue_description is
-# also used by action_executor's soft-close.) The resolve-grounding rule is inline
-# in check_diagnosis_policy above.
+# Target nouns required before resolution; verbs like "connect" are not enough.
+_AFFECTED_TARGET = re.compile(
+    r"\b("
+    r"app|apps|application|applications|software|program|browser|website|site|web|portal|"
+    r"dashboard|email|inbox|mailbox|account|password|"
+    r"network|wifi|wi-fi|internet|ethernet|vpn|server|gateway|database|db|"
+    r"computer|laptop|desktop|machine|pc|mac|macbook|phone|iphone|android|ipad|tablet|"
+    r"printer|monitor|screen|display|keyboard|mouse|headset|webcam|camera|device|hardware|drive|disk|"
+    r"okta|salesforce|snowflake|grafana|github|aws|jenkins|slack|zoom|jira|confluence|adobe|gmail|outlook|teams|shadowrocket|google"
+    r")\b"
+)
 
+
+def _names_affected_target(case: CaseState) -> bool:
+    """True once the employee has named some affected app/service/device/network.
+    Minimum case completeness for a resolution — not a diagnostic-method rule."""
+    text = " ".join(
+        m["content"].lower() for m in case.conversation if m["role"] == "user"
+    )
+    return bool(_AFFECTED_TARGET.search(text))
+
+
+# Vague first messages can be handled without an LLM call.
 _VAGUE_INTAKE_MESSAGES = {
     "can you help me",
     "good afternoon",
@@ -102,6 +103,7 @@ _VAGUE_INTAKE_MESSAGES = {
     "yo",
 }
 
+# Symptom words used to decide whether the user described a real issue.
 _ISSUE_SYMPTOMS = {
     "broken",
     "can't",
@@ -126,6 +128,7 @@ _ISSUE_SYMPTOMS = {
     "unable",
 }
 
+# Context words that make an issue description more actionable.
 _CONTEXT_MARKERS = {
     "right now",
     "today",
@@ -143,6 +146,7 @@ _CONTEXT_MARKERS = {
 }
 
 def needs_issue_description(case: CaseState, user_message: str) -> bool:
+    # Only fast-path vague first messages during intake.
     if case.phase != Phase.INTAKE:
         return False
     if case.tool_calls_total > 0:
@@ -154,6 +158,7 @@ def needs_issue_description(case: CaseState, user_message: str) -> bool:
 
 
 def has_usable_issue_description(case: CaseState) -> bool:
+    # Check whether the conversation contains enough issue detail.
     user_text = " ".join(
         m["content"].lower()
         for m in case.conversation
@@ -179,18 +184,8 @@ def has_usable_issue_description(case: CaseState) -> bool:
     return has_symptom and has_app_or_service and has_context
 
 
-# ── §2. Escalation gating ──────────────────────────────────────────────────────
-# Removed. Handoff authorization is a business-authority decision and now lives in
-# policy/engine.py (check_business_policy on the ESCALATE action), matched against the
-# employee's own words rather than keyword-scanning the model's reasoning. See
-# runtime/workflow_guard.py for the wiring.
-
-
-# ── §3. Runtime-limit reaction ─────────────────────────────────────────────────
-# Fires only for ASK_USER once the case tool budget is spent (CALL_TOOL at the same
-# ceiling is the validator's job). The decision that uses it is inline above (§3).
-
 def _tool_case_limit_question(case: CaseState, proposal: AgentProposal) -> bool:
+    # ASK_USER is blocked after the case-level tool budget is exhausted.
     return (
         proposal.action == AgentAction.ASK_USER
         and case.phase == Phase.INVESTIGATING
@@ -198,10 +193,8 @@ def _tool_case_limit_question(case: CaseState, proposal: AgentProposal) -> bool:
     )
 
 
-# ── Shared text helpers ────────────────────────────────────────────────────────
-# Trivial string utilities used across the sections above.
-
 def _normalize(text: str) -> str:
+    # Normalize user text for exact vague-message matching.
     return _strip_punctuation(" ".join(text.lower().strip().split()))
 
 
