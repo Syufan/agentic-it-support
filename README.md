@@ -214,13 +214,31 @@ LLM proposal → workflow guard → policy check → action execution → state 
 
 With more time, I would improve evaluation, confidence calibration, case grounding, and policy routing.
 
-The current evaluation checks final outcomes and basic runtime behavior. A stronger version would also score the full control path: action sequence, tool choice, policy compliance, and whether the agent avoided unnecessary clarification or escalation.
+### 1. Stronger Evaluation
+
+The current evaluation checks final outcomes and basic runtime behavior. A stronger version would also score the full control path, including action sequence, tool choice, policy compliance, and whether the agent avoided unnecessary clarification or escalation.
+
+### 2. Confidence Calibration
 
 The current confidence score is a simple evidence-based heuristic from successful tool results. I would calibrate it with labeled support cases and account for evidence quality, freshness, and relevance.
 
-I would also make case grounding more explicit in state. A production version could track fields such as affected target, symptom, environment, and whether the target is unknown, inferred, or confirmed. I did not implement the full grounding state in this prototype because it would require changes to the proposal schema, prompt format, state update logic, ambiguity handling, and tests. Instead, this version uses the existing CaseState, prompt guidance, and a minimum completeness gate before RESOLVE to prevent vague issues from becoming fake grounded answers.
+### 3. Planning and Structured Clarification
+
+For complex or ambiguous cases, I would add a planning mode before normal investigation begins. The agent would first produce a diagnostic plan with known facts, missing facts, affected system, risk level, tools to check, and escalation boundary.
+
+I would also replace free-form clarification with a structured clarification tool. Each question would be tied to a missing case field, so the runtime can tell whether the case is ready for investigation or still needs user input.
+
+### 4. Explicit Case Grounding
+
+I would make case grounding more explicit in state. A production version could track fields such as affected target, symptom, environment, start time, user goal, and whether each field is unknown, inferred, or confirmed.
+
+I did not implement the full grounding state in this prototype because it would require changes to the proposal schema, prompt format, state update logic, ambiguity handling, and tests. Instead, this version uses the existing CaseState, prompt guidance, and a minimum completeness gate before RESOLVE to prevent vague issues from becoming fake grounded answers.
+
+### 5. Policy and Context Improvements
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
+
+I would also add memory filtering and context projection. The current system keeps the conversation in case state and sends a bounded case snapshot to the model. A production version should extract useful facts into structured state and send only the relevant context for the current step.
 
 
 ## Optional Design Note
