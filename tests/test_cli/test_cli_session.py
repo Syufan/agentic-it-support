@@ -268,7 +268,7 @@ def test_agent_response_is_written():
     assert "What OS are you using?" in joined
 
 
-def test_response_is_not_prefixed_with_fixed_agent_label():
+def test_response_is_prefixed_with_agent_label():
     output = []
     run_cli_session(
         CaseState(),
@@ -279,7 +279,7 @@ def test_response_is_not_prefixed_with_fixed_agent_label():
         clear=_no_clear,
     )
     joined = " ".join(str(o) for o in output)
-    assert "Agent:" not in joined
+    assert "Agent:" in joined
 
 
 def test_thinking_line_shows_current_phase():

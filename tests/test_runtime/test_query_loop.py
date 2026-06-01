@@ -2,6 +2,7 @@ from typing import Any
 
 import pytest
 from llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
+from agent.parser import ProposalParseError
 from agent.proposals import AgentAction, AgentProposal
 from observability.event_tracing import InMemoryEventLog
 from runtime import limits
@@ -32,6 +33,11 @@ def _proposal(**kwargs) -> AgentProposal:
         "message": "What OS?",
     }
     return AgentProposal(**(defaults | kwargs))
+
+
+# A situation the policy reserves for a human (handle_security_incident), so an
+# LLM-proposed escalate is authorized and the handoff mechanics can be exercised.
+_ESCALATABLE_ISSUE = "my work laptop is infected with malware"
 
 
 def _case_after_clarification(phase: Phase = Phase.INVESTIGATING) -> CaseState:
@@ -347,9 +353,9 @@ def test_resolve_increments_resolution_attempts():
 
 def test_escalate_sets_handoff_completed():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Needs admin", message=None),
+                  escalation_reason="Suspected malware needs security review", message=None),
     ]), {})
     assert case.handoff_completed is True
 
@@ -357,34 +363,34 @@ def test_escalate_sets_handoff_completed():
 def test_escalate_closes_case_in_one_turn():
     # a completed handoff is terminal — the case should close, not linger open
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Needs admin", message=None),
+                  escalation_reason="Suspected malware needs security review", message=None),
     ]), {})
     assert case.phase == Phase.CLOSED
 
 
 def test_escalate_message_surfaces_reason_to_user():
     case = CaseState(phase=Phase.INVESTIGATING)
-    response = run_turn(case, "x", MockLLMClient([
+    response = run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="this needs admin rights we cannot grant", message=None),
+                  escalation_reason="this needs the security team to investigate", message=None),
     ]), {})
-    assert "this needs admin rights we cannot grant" in response
+    assert "this needs the security team to investigate" in response
 
 
 def test_escalate_allowed_and_closes_from_clarifying():
-    # a legitimate (low-confidence) escalation while still clarifying must be a
-    # clean handoff, not mangled into a "repeated invalid proposals" force-escalate
+    # a policy-authorized escalation while still clarifying must be a clean handoff,
+    # not mangled into a "repeated invalid proposals" force-escalate
     case = CaseState(phase=Phase.CLARIFYING)
-    case.conversation = [{"role": "user", "content": "shadow rocket is stuck"}]
-    response = run_turn(case, "macOS, just stuck, no error", MockLLMClient([
+    case.conversation = [{"role": "user", "content": "I think I clicked a phishing link"}]
+    response = run_turn(case, "yes, and now my account sends weird emails", MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="third-party app outside our supported scope", message=None),
+                  escalation_reason="possible account compromise needs security review", message=None),
     ]), {})
     assert case.phase == Phase.CLOSED
     assert case.handoff_completed is True
-    assert "third-party app outside our supported scope" in response
+    assert "possible account compromise needs security review" in response
 
 
 def test_forced_escalation_message_stays_generic():
@@ -400,38 +406,38 @@ def _escalate_proposal() -> AgentProposal:
     return _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
-        escalation_reason="Needs admin access",
+        escalation_reason="Suspected malware needs security review",
         message=None,
     )
 
 def test_escalate_builds_escalation_context():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([_escalate_proposal()]), {})
     assert case.escalation_context != {}
     assert "escalation_reason" in case.escalation_context
 
 def test_escalation_context_includes_confidence():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([_escalate_proposal()]), {})
     # the runtime-computed confidence, not anything the proposal carried
     assert case.escalation_context["confidence"] == case.confidence
 
 def test_escalation_context_includes_issue_description():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN keeps disconnecting every 10 minutes", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, "my laptop is infected with malware after a phishing email", MockLLMClient([_escalate_proposal()]), {})
     assert "issue_description" in case.escalation_context
-    assert "VPN keeps disconnecting" in case.escalation_context["issue_description"]
+    assert "infected with malware" in case.escalation_context["issue_description"]
 
 def test_escalation_context_includes_full_conversation():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([_escalate_proposal()]), {})
     assert "conversation" in case.escalation_context
     assert isinstance(case.escalation_context["conversation"], list)
 
 def test_escalation_context_includes_facts():
     case = CaseState(phase=Phase.INVESTIGATING)
     case.facts = {"os": "macOS"}
-    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([_escalate_proposal()]), {})
     assert case.escalation_context["facts"]["os"] == "macOS"
 
 def test_escalation_context_tool_traces_include_output():
@@ -439,18 +445,18 @@ def test_escalation_context_tool_traces_include_output():
     case.confidence = 0.6
     proposals = [
         _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
-                  tool_name="kb_search", tool_input={"query": "vpn"},
+                  tool_name="kb_search", tool_input={"query": "malware"},
                   message=None),
         _escalate_proposal(),
     ]
     tool = MockTool(ToolResult(success=True, data={"results": ["article"]}))
-    run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": tool})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient(proposals), {"kb_search": tool})
     trace = case.escalation_context["tool_traces"][0]
     assert "output" in trace
 
 def test_escalation_context_includes_resolution_attempts():
     case = CaseState(phase=Phase.INVESTIGATING)
-    run_turn(case, "VPN broken", MockLLMClient([_escalate_proposal()]), {})
+    run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([_escalate_proposal()]), {})
     assert "resolution_attempts" in case.escalation_context
 
 
@@ -525,9 +531,9 @@ def test_ask_user_message_passes_through_unchanged():
 
 def test_escalate_response_is_handoff_message():
     case = CaseState(phase=Phase.INVESTIGATING)
-    response = run_turn(case, "VPN broken", MockLLMClient([
+    response = run_turn(case, _ESCALATABLE_ISSUE, MockLLMClient([
         _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Needs admin", message=None),
+                  escalation_reason="Suspected malware needs security review", message=None),
     ]), {})
     assert "specialist" in response.lower()
     assert "repeat" in response.lower()
@@ -595,6 +601,18 @@ def test_run_turn_records_llm_latency_to_event_log():
 class _FailingLLM(BaseLLMClient):
     def call(self, llm_input: LLMInput) -> AgentProposal:
         raise LLMProviderError("provider down")
+
+
+class _ParseThenGoodLLM(BaseLLMClient):
+    def __init__(self, good: AgentProposal):
+        self._good = good
+        self.calls = 0
+
+    def call(self, llm_input: LLMInput) -> AgentProposal:
+        self.calls += 1
+        if self.calls == 1:
+            raise ProposalParseError("bad json")
+        return self._good
 
 
 def test_llm_error_returns_graceful_message():
@@ -679,6 +697,22 @@ def test_llm_error_builds_escalation_context():
     run_turn(case, "VPN broken", _FailingLLM(), {})
     assert case.escalation_context != {}
     assert "escalation_reason" in case.escalation_context
+
+
+def test_parse_error_retries_with_correction_and_recovers():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    good = _proposal(action=AgentAction.ASK_USER, message="What VPN client are you using?")
+    response = run_turn(case, "VPN keeps timing out", _ParseThenGoodLLM(good), {})
+    assert response == "What VPN client are you using?"
+    assert case.handoff_completed is False
+    assert case.escalation_context == {}
+
+
+def test_forced_escalation_context_hides_internal_runtime_reason():
+    case = CaseState()
+    run_turn(case, "VPN broken", _FailingLLM(), {})
+    assert case.escalation_context["escalation_reason"] != "LLM provider error during investigation"
+    assert case.escalation_context["internal_runtime_reason"] == "LLM provider error during investigation"
 
 
 # ── guardrail violations are correctable (retry, not instant escalation) ───────
@@ -774,7 +808,7 @@ def test_pre_tool_low_confidence_escalation_retries_with_tool():
     assert case.escalation_context == {}
 
 
-def test_direct_handoff_signal_allows_security_escalation():
+def test_human_handoff_signal_allows_security_escalation():
     case = CaseState(phase=Phase.INVESTIGATING)
     case.conversation = [
         {"role": "user", "content": "i clicked a suspicious link and now my account sends weird emails"},
@@ -808,6 +842,69 @@ def test_zero_tool_resolve_is_corrected_then_grounded():
     response = run_turn(case, "VPN broken", MockLLMClient([premature, do_tool, resolve]), tools)
     assert "Switch the VPN protocol to TCP" in response
     assert case.tool_calls_total >= 1
+    assert case.handoff_completed is False
+
+
+def test_known_incident_followup_can_remain_resolving_without_forced_escalation():
+    case = CaseState(phase=Phase.RESOLVING)
+    case.conversation = [
+        {"role": "user", "content": "Salesforce is extremely slow today."},
+        {"role": "assistant", "content": "Salesforce has a known degraded-performance incident."},
+    ]
+    case.tool_traces = [
+        ToolTrace(
+            tool_name="status_api",
+            inputs={"service": "Salesforce"},
+            output={"services": [{"name": "Salesforce", "status": "degraded", "incident": "Elevated response times"}]},
+            success=True,
+        )
+    ]
+    case.tool_calls_total = 1
+    case.confidence = 0.35
+    response = run_turn(case, "My teammates are seeing the same thing too.", MockLLMClient([
+        _proposal(
+            action=AgentAction.RESOLVE,
+            message="Salesforce is still under a known degraded-performance incident. The safest next step is to wait for the incident to clear and avoid local troubleshooting.",
+            user_confirmed_resolution=None,
+        ),
+    ]), {})
+    assert "known degraded" in response.lower()
+    assert case.handoff_completed is False
+
+
+def test_vpn_timeout_resolution_requires_user_environment_context():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [{"role": "user", "content": "The company VPN keeps timing out when I try to connect."}]
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={"results": ["VPN guide"]}, success=True)]
+    case.tool_calls_total = 1
+    case.confidence = 0.35
+    premature = _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app.")
+    ask = _proposal(action=AgentAction.ASK_USER, message="What device and VPN client are you using?")
+    response = run_turn(case, "same issue", MockLLMClient([premature, ask]), {})
+    assert response == "What device and VPN client are you using?"
+    assert case.phase == Phase.CLARIFYING
+
+
+def test_access_grant_request_retries_to_policy_route_not_user_lookup():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [
+        {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
+    ]
+    ask_user = _proposal(
+        action=AgentAction.ASK_USER,
+        message="Please provide your user ID.",
+        missing_info=["user ID"],
+    )
+    policy_route = _proposal(
+        action=AgentAction.RESOLVE,
+        message="I can't grant Snowflake write access directly. Snowflake write access requires approval through the IT portal with business justification.",
+    )
+    case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={"results": ["software access"]}, success=True)]
+    case.tool_calls_total = 1
+    case.confidence = 0.35
+    response = run_turn(case, "I need it for analytics.", MockLLMClient([ask_user, policy_route]), {})
+    assert "can't grant" in response.lower()
+    assert "approval" in response.lower()
     assert case.handoff_completed is False
 
 

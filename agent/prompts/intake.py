@@ -20,7 +20,6 @@ Respond with a single JSON object and nothing else:
 ```json
 {
   "action": "ask_user" | "call_tool",
-  "reasoning_summary": "brief explanation of your reasoning",
 
   // if action = ask_user
   "message": "the question to ask the employee",

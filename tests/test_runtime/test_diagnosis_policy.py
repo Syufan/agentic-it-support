@@ -50,41 +50,16 @@ def test_actionable_issue_description_is_usable():
     assert has_usable_issue_description(case) is True
 
 
-def test_escalation_blocked_when_tool_limit_not_reached_without_direct_handoff_reason():
-    case = _case(
-        phase=Phase.INVESTIGATING,
-        tool_calls_total=1,
-    )
+def test_diagnosis_policy_is_pass_through_for_escalation():
+    # Escalation authority moved to policy/engine.py (matched on the employee's words).
+    # diag no longer keyword-scans the model's reason, so it allows the ESCALATE action
+    # regardless of confidence or the reason text.
+    case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1)
     proposal = _proposal(
         action=AgentAction.ESCALATE,
         confidence=0.3,
         message=None,
         escalation_reason="VPN needs human intervention",
-    )
-    decision = check_diagnosis_policy(case, proposal)
-    assert decision.allowed is False
-    assert "premature escalation" in decision.reason
-
-
-def test_escalation_allowed_when_tool_case_limit_reached():
-    case = _case(
-        phase=Phase.INVESTIGATING,
-        tool_calls_total=limits.MAX_TOOL_CALLS_PER_CASE,
-    )
-    proposal = _proposal(
-        action=AgentAction.ESCALATE,
-        message=None,
-        escalation_reason="still unresolved",
-    )
-    assert check_diagnosis_policy(case, proposal).allowed
-
-
-def test_escalation_allowed_for_direct_handoff_reason():
-    case = _case(phase=Phase.CLARIFYING, tool_calls_total=0)
-    proposal = _proposal(
-        action=AgentAction.ESCALATE,
-        message=None,
-        escalation_reason="hardware replacement required",
     )
     assert check_diagnosis_policy(case, proposal).allowed
 
@@ -107,6 +82,56 @@ def test_resolve_allowed_with_sufficient_confidence():
         case,
         _proposal(action=AgentAction.RESOLVE, message="Try this"),
     ).allowed
+
+
+def test_vpn_timeout_resolve_blocked_until_environment_context_exists():
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [
+        {"role": "user", "content": "The company VPN keeps timing out when I try to connect."},
+    ]
+    decision = check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app."),
+    )
+    assert decision.allowed is False
+    assert "vpn environment" in decision.reason.lower()
+
+
+def test_vpn_timeout_resolve_allowed_with_environment_context():
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [
+        {"role": "user", "content": "The company VPN keeps timing out on macOS with Cisco AnyConnect."},
+    ]
+    assert check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.RESOLVE, message="Restart the VPN app."),
+    ).allowed
+
+
+def test_access_grant_ask_user_blocked_until_policy_boundary_explained():
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [
+        {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
+    ]
+    decision = check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.ASK_USER, message="What is your user ID?"),
+    )
+    assert decision.allowed is False
+    assert "approval path" in decision.correction.lower()
+
+
+def test_access_grant_resolution_requires_no_direct_grant_boundary():
+    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
+    case.conversation = [
+        {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
+    ]
+    decision = check_diagnosis_policy(
+        case,
+        _proposal(action=AgentAction.RESOLVE, message="Submit a request in the IT portal."),
+    )
+    assert decision.allowed is False
+    assert "cannot directly grant" in decision.correction.lower()
 
 
 def test_tool_case_limit_reached_blocks_ordinary_clarifying_question():
@@ -135,7 +160,7 @@ def test_tool_case_limit_reached_allows_resolution_or_escalation_not_more_tools_
     ).allowed
 
 
-def test_direct_handoff_signal_allows_escalation_before_tool_case_limit():
+def test_human_handoff_signal_allows_escalation_before_tool_case_limit():
     case = _case(phase=Phase.INVESTIGATING, tool_calls_total=1)
     case.conversation = [
         {"role": "user", "content": "i clicked a suspicious link and now my account sends weird emails"},
@@ -150,5 +175,3 @@ def test_direct_handoff_signal_allows_escalation_before_tool_case_limit():
         ),
     )
     assert decision.allowed is True
-
-

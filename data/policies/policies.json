@@ -42,6 +42,12 @@
       "description": "Change VPN gateway or network hardware configuration",
       "authorization": "human",
       "notes": "Out of scope for the agent; route to network engineering."
+    },
+    {
+      "action": "handle_security_incident",
+      "description": "Investigate or remediate a suspected security incident (malware, phishing, account compromise, lost or stolen device)",
+      "authorization": "human",
+      "notes": "Security-sensitive; always requires human IT/security review. The agent must escalate and never attempt to self-resolve."
     }
   ]
 }

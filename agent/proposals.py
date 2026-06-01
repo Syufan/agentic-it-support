@@ -20,7 +20,6 @@ class AgentProposal(BaseModel):
     """
 
     action: AgentAction
-    reasoning_summary: str
 
     # User communication
     message: str | None = None

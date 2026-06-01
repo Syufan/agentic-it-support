@@ -2,119 +2,218 @@
 
 An agentic IT helpdesk assistant built with FastAPI and OpenAI. The agent follows a deterministic state machine (intake → clarifying → investigating → resolving → escalating → closed) and uses runtime-guarded tool loops to diagnose and resolve employee IT issues.
 
-## Tools, data sources, and policy
+## Clear Setup Instructions
 
-The agent grounds its reasoning in four mock information sources (under `data/`), each exposed as a tool:
+### Prerequisites
 
-| Tool | Source | Use |
-|------|--------|-----|
-| `kb_search` | Knowledge base (Markdown) | Troubleshooting articles and runbooks |
-| `status_api` | System status (JSON) | Service health and known incidents |
-| `user_directory` | User records (JSON) | Employee dept/role/location/permissions |
-| `resolution_history` | Past tickets (JSON) | How similar issues were resolved before |
+- Python 3.13 or newer
+- `uv` for dependency management
+- An OpenAI API key with access to the model configured in `.env`
 
-The agent is required to ground in at least one tool before proposing a resolution
-(enforced in `policy/`), so it cannot answer common issues from the model's memory alone.
-Business authorization rules live in `data/policies/policies.json`, but they are not exposed
-as an LLM tool. The runtime loads them through `policy/engine.py` and blocks unauthorized
-resolutions before they become user-visible.
+### 1. Configure environment
 
-## Setup
+Create a local environment file:
 
 ```bash
 cp .env.example .env
-# fill in LLM_API_KEY and LLM_MODEL in .env
+```
+
+Edit `.env`:
+
+```bash
+LLM_API_KEY=your_openai_api_key_here
+LLM_MODEL=gpt-4o-mini-2024-07-18
+LLM_TEMPERATURE=0.2
+```
+
+`LLM_API_KEY` is required for the real API and CLI flows. `LLM_MODEL` can be changed to any OpenAI chat model available to your account.
+
+### 2. Install dependencies
+
+```bash
 uv sync
 ```
 
-## Run
+### 3. Run the FastAPI server
 
 ```bash
 uv run python main.py
-# server starts at http://localhost:8000
 ```
 
-## Test
+The server starts at:
+
+```text
+http://localhost:8000
+```
+
+Check that it is alive:
+
+```bash
+curl http://localhost:8000/health
+```
+
+### 4. Send a chat request
+
+Start a new case:
+
+```bash
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "I cannot connect to the VPN, it keeps timing out"}' | python3 -m json.tool
+```
+
+Continue the same case by reusing the returned `case_id`:
+
+```bash
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"case_id": "<case_id>", "message": "Cisco AnyConnect on macOS, home WiFi, already restarted"}' | python3 -m json.tool
+```
+
+Inspect the full case state:
+
+```bash
+curl http://localhost:8000/case/<case_id> | python3 -m json.tool
+```
+
+### 5. Run the local CLI
+
+```bash
+uv run python cli.py
+```
+
+Useful CLI commands:
+
+```text
+/status   show current case state
+/trace    show recent runtime events
+/clear    clear the terminal
+/quit     exit
+```
+
+### 6. Run tests and evaluation
+
+Run the test suite:
 
 ```bash
 uv run pytest
 ```
 
-## Smoke test
-
-Start the server, then send requests with the same `case_id` to continue a conversation:
-
-```bash
-# turn 1 — open a new case
-curl -s -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "I cannot connect to the VPN, it keeps timing out"}' | python3 -m json.tool
-
-# turn 2 — continue the case (replace <case_id> with the value from turn 1)
-curl -s -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"case_id": "<case_id>", "message": "Cisco AnyConnect on macOS, home WiFi, already restarted"}' | python3 -m json.tool
-
-# retrieve full case state, including the human-handoff package when escalated
-curl http://localhost:8000/case/<case_id> | python3 -m json.tool
-
-# health check
-curl http://localhost:8000/health
-```
-
-### Endpoints
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/chat` | Send a message; returns the agent reply, phase, and `is_closed` |
-| `GET`  | `/case/{case_id}` | Full case snapshot — phase, confidence, facts, and the `escalation_context` handoff package (`null` until escalated) |
-| `GET`  | `/health` | Liveness check |
-
-## Evaluation
-
-Run batch evaluation against predefined scenarios (requires `LLM_API_KEY`):
+Run the scenario evaluator:
 
 ```bash
 uv run python -m evaluation.runner
 ```
 
-Scenarios live in `evaluation/scenarios/*.json`. Each scenario defines user messages and pass/fail criteria (`escalated`, `resolved`, `min_tool_calls`, `max_tool_calls`).
+## IT Support Problem
+
+This project focuses on employee-facing IT helpdesk triage for a small set of common workplace IT issues.
+
+The agent can attempt safe guidance for VPN connectivity troubleshooting, password reset self-service guidance, and service status checks for known incidents.
+
+The agent must escalate or route through policy for MFA recovery, permission or access grants, and infrastructure or network configuration changes.
+
+I chose this problem because these cases are common, repetitive, and naturally test the boundaries of an agentic system. Some issues can be handled with safe troubleshooting guidance, while others require policy checks, approval, or human escalation. This makes the problem a good fit for explicit runtime state, tool grounding, and policy-controlled resolution versus escalation.
+
+## Why an Agentic Approach
+
+A simple FAQ bot is not enough because IT issues are often vague, incomplete, and require checking internal context.
+
+An agentic approach fits because the system can ask follow-up questions, call tools, update case state, and decide whether to resolve or escalate. The runtime controls these steps with validation, policy checks, and explicit workflow state.
+
+## Architecture
+
+The system has five main layers:
+
+1. Input Interface
+   The employee sends an issue through the API or CLI. Each message belongs to a case, so the system can continue the same support conversation across turns.
+
+2. Runtime Controller
+   The runtime is the main control layer. It builds context, runs the ReAct loop, validates proposed actions, calls tools, updates case state, and decides when to ask the user, continue investigating, resolve, or escalate.
+
+3. LLM Agent
+   The LLM does not directly control the workflow. It receives the current case context and returns a structured proposal, such as asking a question, calling a tool, suggesting a resolution, or escalating.
+
+4. Tools and Data Sources
+   Tools provide grounded information from mock internal systems, including knowledge base articles, system status, policies, and resolution history.
+
+5. State and Observability
+   `CaseState` stores the current phase, conversation, facts, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
+
+## Design Decisions
+
+The main design decision is to keep the LLM and runtime separate. The LLM proposes what to do next, but the runtime controls whether that action is valid, safe, and allowed in the current workflow state.
+
+`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, known facts, tool results, confidence, failed resolutions, and escalation context.
+
+The runtime uses a ReAct-style loop, but tool execution is controlled by the system. The model can request a tool, but the runtime validates the request, checks limits and policy boundaries, executes the tool, and feeds the result back into the next step.
+
+Escalation is handled as a first-class outcome. If the issue is risky, unresolved, outside tool coverage, or below the confidence threshold, the system creates a handoff summary for human IT instead of pretending to solve the case.
+
+This design keeps the agent flexible enough to handle vague IT issues while keeping the workflow explicit, auditable, and bounded by runtime rules.
+
+## Resolution vs. Escalation Boundary
+
+The agent resolves only when the runtime has enough evidence, confidence, and policy approval to provide safe guidance.
+
+The agent escalates when the issue is risky, outside tool coverage, restricted by policy, repeatedly unresolved, or too uncertain to answer safely.
+
+On escalation, the system creates a handoff summary with the case context, tool results, and escalation reason for human IT.
+
+## Simulated Data Sources
+
+The project simulates four internal IT data sources:
+
+- Knowledge base: troubleshooting articles for common issues.
+- System status: current service health and known incidents.
+- Policy rules: what the agent is allowed to resolve versus what requires human IT.
+- Resolution history: similar past cases and how they were handled.
+
+These sources were chosen because real IT support usually depends on internal documentation, live service status, business rules, and previous ticket patterns rather than model knowledge alone.
+
+## Assumptions and Tradeoffs
+
+- Assumption: Most IT support cases follow a predictable workflow.
+  Tradeoff: This improves control, testing, and auditability, but is less flexible than a fully autonomous agent.
+
+- Assumption: The LLM should propose actions, while the runtime owns execution, validation, and state transitions.
+  Tradeoff: This improves safety and predictability, but requires additional runtime logic such as validators, guards, and policies.
+
+- Assumption: Support decisions should be grounded in tool results and case evidence rather than model intuition alone.
+  Tradeoff: This improves reliability and traceability, but increases latency and makes answer quality dependent on tool coverage.
+
+## Evaluation
+
+I evaluated the system with automated test cases and scenario-based runs.
+
+The unit tests check the core runtime behavior: state transitions, action validation, policy boundaries, tool execution, message building, API routes, and CLI behavior.
+
+The scenario suite contains six conversations that mirror the project scope: three safe-guidance cases and three boundary cases.
+
+Safe-guidance cases cover VPN troubleshooting, password reset guidance, and known service degradation checks.
+
+Boundary cases cover MFA recovery escalation, access-grant policy routing, and network configuration escalation.
+
+The main evaluation criteria are whether the agent resolves safe cases, escalates risky or unsupported cases, uses tools before giving guidance, and preserves enough context for human IT handoff.
 
 ## Observability
 
-There is no external tracing dependency. All diagnostic state is carried in `CaseState` after each turn:
+The system records runtime events, case state, tool traces, confidence, and escalation context. This makes each case inspectable during development and gives human IT enough context when a case is escalated.
 
-| Field | What it tells you |
-|-------|-------------------|
-| `tool_traces` | Every tool call: name, inputs, output, success, timestamp |
-| `facts` | Accumulated facts extracted from tool results |
-| `conversation` | Full message history (user + assistant) |
-| `escalation_context` | Complete handoff package when escalated |
-| `confidence` | Evidence-calibrated confidence at the last turn (see below) |
-| `phase` | Current state machine phase |
-| `llm_calls` / `prompt_tokens` / `completion_tokens` / `llm_latency_ms` | Per-case cost & latency accounting |
+## External Dependencies
 
-`log_case_closed` also emits an `estimated_cost_usd` derived from token counts and the
-per-1K pricing in `config.py` (override via `LLM_PROMPT_COST_PER_1K` /
-`LLM_COMPLETION_COST_PER_1K`).
+The project keeps external dependencies small and focused. FastAPI and Uvicorn serve the API, OpenAI provides the LLM client, Pydantic handles structured request/response models, and python-dotenv / pydantic-settings load local configuration.
 
-### Confidence calibration
+Development dependencies are limited to pytest for tests and httpx for API route testing.
 
-The transition thresholds — and the wording the employee sees — run on a *calibrated*
-confidence, not the LLM's raw self-report (`runtime/calibration.py`): confidence is
-capped at the borderline threshold until at least one tool has been called, and
-discounted for each prior resolution attempt the user did not confirm
-(`CONFIDENCE_RETRY_PENALTY`, default 0.15). The coefficients are hand-set for the MVP
-and tunable via env; with a labelled evaluation set they could be fit from observed
-resolution correctness.
+## Future Improvements
 
-Use `observability.logger` to emit structured JSON logs at the end of each turn or on case close:
+With more time, I would improve the coordination between workflow state, confidence, and policy decisions.
 
-```python
-from observability.logger import log_turn, log_case_closed
+Right now the runtime uses explicit rules to decide when to continue investigating, resolve, or escalate. A stronger version would calibrate confidence with more labeled evaluation data, make policy boundaries more fine-grained, and test more edge cases around repeated failures, ambiguous user input, and partial resolutions.
 
-log_turn(case)        # per-turn snapshot
-log_case_closed(case) # final summary when phase reaches CLOSED
-```
+I would also improve the evaluation harness so it can measure not only final outcomes, but also whether the agent took the right path through the workflow.
 
-Logs are emitted via Python's standard `logging` module under the `agentic_it_support` logger.
+## Optional Design Note
+
+The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
