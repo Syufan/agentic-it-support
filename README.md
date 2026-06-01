@@ -208,7 +208,7 @@ The goal is not only to check whether the final answer sounds reasonable, but al
 
 ```text
 LLM proposal → workflow guard → policy check → action execution → state transition
-
+```
 
 ## Future Improvements
 
