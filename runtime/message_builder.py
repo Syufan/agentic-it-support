@@ -38,20 +38,23 @@ def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
 
 
 def _build_observation(case: CaseState) -> str:
+    # Start with the current workflow state.
     lines = [
         "[Case State]",
         f"Phase: {case.phase.value}",
     ]
 
+    # Add structured case memory.
     if case.facts:
         lines.append(f"Facts: {json.dumps(case.facts)}")
-
+    
     if case.hypotheses:
         lines.append(f"Hypotheses: {'; '.join(case.hypotheses)}")
 
     if case.missing_info:
         lines.append(f"Missing info: {', '.join(case.missing_info)}")
 
+    # Add the most recent bounded tool results.
     if case.tool_traces:
         lines.append("Tool results:")
         for trace in case.tool_traces[-_MAX_TOOL_TRACES_IN_CONTEXT:]:
@@ -59,6 +62,7 @@ def _build_observation(case: CaseState) -> str:
             output_preview = json.dumps(trace.output)[:_TOOL_OUTPUT_PREVIEW_CHARS]
             lines.append(f"  [{status}] {trace.tool_name}: {output_preview}")
 
+    # Tell the LLM if previous resolution attempts failed.
     if case.failed_resolutions:
         lines.append(f"Failed resolutions: {len(case.failed_resolutions)}")
 

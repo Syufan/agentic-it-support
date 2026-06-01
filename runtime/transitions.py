@@ -48,10 +48,6 @@ def _from_clarifying(action: AgentAction) -> TransitionResult:
 
 
 def _from_investigating(case: CaseState, action: AgentAction) -> TransitionResult:
-    # Action-driven. Whether the action is *allowed* (tool budget, enough evidence to
-    # resolve) is decided upstream by the validator + diagnosis_policy; here we only
-    # map an accepted action to the next phase. ESCALATE never reaches this function —
-    # action_executor pre-sets ESCALATING for it (see [[action-executor-risk-boundaries]]).
     if action == AgentAction.RESOLVE:
         return _result(Phase.RESOLVING)        # T4 — propose a fix, await confirmation
     if action == AgentAction.ASK_USER:

@@ -13,13 +13,16 @@ MAX_CORRECTIONS = 3
 
 @dataclass
 class GuardState:
+    # Tracks correction attempts within one turn.
     corrections: int = 0
 
 
 @dataclass
 class GuardDecision:
     allowed: bool
+    # Correction sent back to the LLM when the proposal is recoverable.
     correction: str | None = None
+    # Runtime fallback reason when correction attempts are exhausted.
     escalation_reason: str | None = None
 
 
@@ -29,6 +32,8 @@ def check_workflow_guard(
     tool_registry: dict[str, BaseTool],
     state: GuardState,
 ) -> GuardDecision:
+
+    # 1. Validate proposal shape, phase legality, tool names, and tool budgets.
     validation = validate_proposal(case, proposal, valid_tools=set(tool_registry))
     if not validation.valid:
         return _reject(
@@ -40,6 +45,7 @@ def check_workflow_guard(
             ),
         )
 
+    # 2. Enforce diagnosis-level safety rules.
     diagnosis_policy = check_diagnosis_policy(case, proposal)
     if not diagnosis_policy.allowed:
         return _reject(
@@ -51,6 +57,7 @@ def check_workflow_guard(
             ),
         )
 
+    # 3. Enforce business authorization boundaries.
     business_policy = _check_business_authorization(case, proposal)
     if not business_policy.allowed:
         return _reject(
@@ -70,6 +77,7 @@ def _reject(
     escalation_reason: str,
     correction: str,
 ) -> GuardDecision:
+    # Re-prompt until the correction budget is exhausted.
     state.corrections += 1
     if state.corrections > MAX_CORRECTIONS:
         return GuardDecision(False, escalation_reason=escalation_reason)
@@ -80,28 +88,18 @@ def _check_business_authorization(
     case: CaseState,
     proposal: AgentProposal,
 ) -> BusinessPolicyDecision:
-    """Run the policy engine with the right text surface per action.
-
-    - escalate: judged on the employee's objective situation (their own words), not
-      the model's escalation_reason — so a request the agent can handle cannot talk
-      its way into a handoff. Exception: once the case tool budget is exhausted, a
-      handoff is the legitimate runtime fallback, authorized regardless of policy.
-    - everything else (resolve): judged on what the model proposes to do, to catch an
-      over-reaching self-service fix.
-    """
+    """Choose the text surface used for business policy checks."""
     if proposal.action == AgentAction.ESCALATE:
+        # Escalation is authorized from the user's situation, not the LLM's wording.
         if limits.tool_case_limit_reached(case):
             return BusinessPolicyDecision(True)
         return check_business_policy("escalate", _user_conversation_text(case))
+    # Resolve is checked against the proposed user-facing action.
     return check_business_policy(proposal.action.value, _proposal_text(proposal))
 
 
 def _proposal_text(proposal: AgentProposal) -> str:
-    """Free text for resolve-path business-policy matching.
-
-    policy/ deliberately does not know AgentProposal's shape; the runtime guard
-    extracts the text surface it wants policy rules to evaluate.
-    """
+    """Text used to evaluate proposed non-escalation actions."""
     return " ".join(
         part for part in (
             proposal.message or "",
@@ -112,7 +110,7 @@ def _proposal_text(proposal: AgentProposal) -> str:
 
 
 def _user_conversation_text(case: CaseState) -> str:
-    """The employee's own words — the objective basis for an escalation decision."""
+    """User-provided text used to evaluate escalation authorization."""
     return " ".join(
         m["content"] for m in case.conversation if m["role"] == "user"
     )

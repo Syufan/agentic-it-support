@@ -107,7 +107,7 @@ def run_turn(
             correction = guard.correction
             continue
         
-        # Execute accepted proposal:
+        # Execute accepted proposal
         outcome = run_accepted_action(case,proposal,tool_registry,retry_penalty,event_log)
         if outcome.continue_loop:
             continue
@@ -121,15 +121,19 @@ def _call_agent(
     correction: str | None,
     llm: BaseLLMClient,
     event_log: InMemoryEventLog,
-):
+):  
+    # Build the current LLM input and request the next proposal.
     llm_input = build_messages(case, correction=correction)
     proposal = llm.call(llm_input)
+
+    # Track LLM usage for limits and observability.
     case.llm_calls_total += 1
     _record_llm_stats(case, llm, event_log)
     return proposal
 
 
 def _raise_if_cancelled(should_cancel: Callable[[], bool] | None) -> None:
+    # Stop the turn if the caller requested cancellation.
     if should_cancel and should_cancel():
         raise TurnCancelled()
 
@@ -139,6 +143,7 @@ def _record_llm_stats(
     llm: BaseLLMClient,
     event_log: InMemoryEventLog,
 ) -> None:
+    # Record token and latency stats when the LLM client exposes them.
     stats = getattr(llm, "last_stats", None)
     if stats is None:
         return
