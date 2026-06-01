@@ -212,7 +212,7 @@ LLM proposal → workflow guard → policy check → action execution → state 
 
 ## Future Improvements
 
-With more time, I would improve the system in five areas:
+With more time, I would improve evaluation, confidence calibration, case grounding, and policy routing.
 
 ### 1. Stronger Evaluation
 
