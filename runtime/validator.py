@@ -4,6 +4,7 @@ from agent.proposals import AgentAction, AgentProposal
 from runtime import limits
 from state.case_state import CaseState, Phase
 
+# Structural action permissions by workflow phase.
 _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
     Phase.INTAKE:        {AgentAction.ASK_USER, AgentAction.CALL_TOOL},
     Phase.CLARIFYING:    {AgentAction.ASK_USER, AgentAction.CALL_TOOL, AgentAction.ESCALATE},
@@ -18,9 +19,7 @@ _ALLOWED_ACTIONS: dict[Phase, set[AgentAction]] = {
 class ValidationResult:
     valid: bool
     reason: str | None = None
-    # Optional directive re-prompt for the agent. When set, the workflow guard
-    # surfaces it instead of the generic "pick a valid action" correction — used
-    # so a tool-limit rejection tells the agent to decide on current evidence.
+    # Optional re-prompt for correctable validation failures.
     correction: str | None = None
 
 
@@ -29,27 +28,27 @@ def validate_proposal(
     proposal: AgentProposal,
     valid_tools: set[str],
 ) -> ValidationResult:
-    """Validate a proposal. `valid_tools` is the single source of truth for which
-    tools the LLM may call — the caller passes the injected tool registry's keys,
-    so the validator keeps no separate hardcoded list that could drift from it."""
+    """Validate proposal structure, phase legality, tool names, and tool budgets."""
+
+    # Enforce phase-level action legality.
     if proposal.action not in _ALLOWED_ACTIONS[case.phase]:
         return ValidationResult(False, f"{proposal.action} not allowed in phase {case.phase}")
 
     match proposal.action:
+        # ASK_USER must return a question/message to the user.
         case AgentAction.ASK_USER:
             if not proposal.message:
                 return ValidationResult(False, "ask_user requires message")
 
         case AgentAction.CALL_TOOL:
+            # Tool calls must name a tool.
             if not proposal.tool_name:
                 return ValidationResult(False, "call_tool requires tool_name")
+            # Only allow tools from the injected registry.
             if proposal.tool_name not in valid_tools:
                 return ValidationResult(False, f"unknown tool: {proposal.tool_name}")
-            # Tool-call ceilings are expressed as a (correctable) invalid proposal:
-            # the workflow guard re-prompts the agent to decide on current evidence,
-            # rather than the runtime hard-escalating the case on the spot. The turn
-            # and case ceilings differ: the turn budget refills next turn (so ASK_USER
-            # is a valid move), while the case budget is exhausted for good.
+
+            # Re-prompt instead of hard-failing when tool budgets are exhausted.
             if limits.tool_turn_limit_reached(case):
                 return ValidationResult(
                     False,
@@ -68,11 +67,12 @@ def validate_proposal(
                         "Choose a valid non-tool action based only on the existing case evidence."
                     ),
                 )
-
+        # Resolution needs a response message.
         case AgentAction.RESOLVE:
             if not proposal.message:
                 return ValidationResult(False, "resolve requires message")
 
+        # ESCALATE must include the handoff reason.
         case AgentAction.ESCALATE:
             if not proposal.escalation_reason:
                 return ValidationResult(False, "escalate requires escalation_reason")

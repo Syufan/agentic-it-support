@@ -61,24 +61,6 @@ def check_diagnosis_policy(
     # (distinct successful tool sources), so this gate is what authorizes the RESOLVE
     # action that drives RESOLVING. Already in RESOLVING = confirmation, not re-gated.
     if proposal.action == AgentAction.RESOLVE and case.phase != Phase.RESOLVING:
-        if _vpn_timeout_resolution_missing_environment(case):
-            return DiagnosisPolicyDecision(
-                False,
-                "vpn environment context is missing before resolution",
-                (
-                    "Do not resolve the VPN timeout yet. Ask for the employee's "
-                    "device/OS and VPN client, or use the existing answer if already provided."
-                ),
-            )
-        if _access_grant_resolution_missing_boundary(case, proposal):
-            return DiagnosisPolicyDecision(
-                False,
-                "access-grant response missing policy boundary",
-                (
-                    "Explain the approval path and clearly state that the agent cannot "
-                    "directly grant this access. Mention the relevant approval requirement."
-                ),
-            )
         if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
@@ -89,16 +71,9 @@ def check_diagnosis_policy(
                 ),
             )
 
-    if proposal.action == AgentAction.ASK_USER:
-        if _access_grant_user_lookup_before_policy(case, proposal):
-            return DiagnosisPolicyDecision(
-                False,
-                "access-grant request needs policy route before user lookup",
-                (
-                    "Do not start by collecting a user ID for an access grant. First explain "
-                    "the approval path and that the agent cannot directly grant access."
-                ),
-            )
+    # Approval-path handling for access-grant requests is NOT a runtime method rule:
+    # the phase prompts steer the agent to explain the approval path, and
+    # policy/engine.py enforces the authority boundary on the resolve/escalate action.
 
     return DiagnosisPolicyDecision(True)
 
@@ -167,42 +142,6 @@ _CONTEXT_MARKERS = {
     "google",
 }
 
-_VPN_ENVIRONMENT_MARKERS = {
-    "anyconnect",
-    "cisco",
-    "client",
-    "globalprotect",
-    "mac",
-    "macos",
-    "windows",
-}
-
-_VPN_TIMEOUT_MARKERS = {
-    "timed out",
-    "timing out",
-    "timeout",
-    "cannot connect",
-    "can't connect",
-    "cant connect",
-    "unable to connect",
-}
-
-_ACCESS_GRANT_MARKERS = {
-    "give me access",
-    "grant access",
-    "need access",
-    "write access",
-}
-
-_ACCESS_SYSTEM_MARKERS = {
-    "snowflake",
-    "grafana",
-    "salesforce",
-    "adobe",
-    "github",
-    "aws",
-}
-
 def needs_issue_description(case: CaseState, user_message: str) -> bool:
     if case.phase != Phase.INTAKE:
         return False
@@ -240,50 +179,6 @@ def has_usable_issue_description(case: CaseState) -> bool:
     return has_symptom and has_app_or_service and has_context
 
 
-def _vpn_timeout_resolution_missing_environment(case: CaseState) -> bool:
-    text = _conversation_text(case)
-    if "vpn" not in text:
-        return False
-    if not any(marker in text for marker in _VPN_TIMEOUT_MARKERS):
-        return False
-    return not any(marker in text for marker in _VPN_ENVIRONMENT_MARKERS)
-
-
-def _access_grant_user_lookup_before_policy(case: CaseState, proposal: AgentProposal) -> bool:
-    text = _conversation_text(case)
-    if not _is_access_grant_request(text):
-        return False
-    message = (proposal.message or "").lower()
-    return any(marker in message for marker in ("user id", "email", "employee id"))
-
-
-def _access_grant_resolution_missing_boundary(case: CaseState, proposal: AgentProposal) -> bool:
-    text = _conversation_text(case)
-    if not _is_access_grant_request(text):
-        return False
-    message = (proposal.message or "").lower()
-    has_no_direct_grant_boundary = any(
-        marker in message
-        for marker in (
-            "can't grant",
-            "cannot grant",
-            "can’t grant",
-            "not able to grant",
-            "not grant",
-            "do not grant",
-            "approval",
-        )
-    )
-    return not has_no_direct_grant_boundary
-
-
-def _is_access_grant_request(text: str) -> bool:
-    return (
-        any(marker in text for marker in _ACCESS_GRANT_MARKERS)
-        and any(marker in text for marker in _ACCESS_SYSTEM_MARKERS)
-    )
-
-
 # ── §2. Escalation gating ──────────────────────────────────────────────────────
 # Removed. Handoff authorization is a business-authority decision and now lives in
 # policy/engine.py (check_business_policy on the ESCALATE action), matched against the
@@ -305,14 +200,6 @@ def _tool_case_limit_question(case: CaseState, proposal: AgentProposal) -> bool:
 
 # ── Shared text helpers ────────────────────────────────────────────────────────
 # Trivial string utilities used across the sections above.
-
-def _conversation_text(case: CaseState) -> str:
-    return " ".join(
-        m["content"].lower()
-        for m in case.conversation
-        if m["role"] == "user"
-    )
-
 
 def _normalize(text: str) -> str:
     return _strip_punctuation(" ".join(text.lower().strip().split()))

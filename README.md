@@ -1,8 +1,92 @@
 # Agentic IT Support
 
-An agentic IT helpdesk assistant built with FastAPI and OpenAI. The agent follows a deterministic state machine (intake → clarifying → investigating → resolving → escalating → closed) and uses runtime-guarded tool loops to diagnose and resolve employee IT issues.
+## IT Support Problem Scope and why
 
-## Clear Setup Instructions
+This project focuses on employee-facing IT helpdesk triage across connectivity,
+account/identity, application access, and service availability.
+
+The agent can provide safe guidance for VPN troubleshooting, password reset self-service, and known incident checks. It can explain approval paths for access requests, but must escalate MFA recovery, account unlocks, and infrastructure changes to human IT.
+
+I chose this problem because IT helpdesk triage is a practical area for agents: many cases are repetitive and tool-grounded, while still testing important boundaries between safe resolution, policy-based routing, and human escalation.
+
+## Why an Agentic Approach
+
+A simple FAQ bot can only answer from static knowledge, and a rule-based flow cannot cover the variety of ways employees describe IT issues. Traditional FAQ search also pushes the cognitive burden onto the employee, who may not know the right terms, system names, or troubleshooting path.
+
+An agentic approach fits because the system can gather context through conversation, check company-specific tools such as service status, knowledge base articles, policies, and past tickets, then decide whether to provide guidance, explain an approval path, or escalate. The runtime keeps these steps controlled with validation, policy checks, and explicit workflow state.
+
+## Architecture
+
+The system has five main layers:
+
+1. Input Interface
+   The employee sends an issue through the API or CLI. Each message belongs to a case, so the system can continue the same support conversation across turns.
+
+2. Runtime Controller
+   The runtime is the main control layer. It builds context, runs the ReAct loop, validates proposed actions, calls tools, updates case state, and decides when to ask the user, continue investigating, resolve, or escalate.
+
+3. LLM Agent
+   The LLM does not directly control the workflow. It receives the current case context and returns a structured proposal, such as asking a question, calling a tool, suggesting a resolution, or escalating.
+
+4. Tools and Data Sources
+   Tools provide grounded information from mock internal systems, including knowledge base articles, system status, policies, and resolution history.
+
+5. State and Observability
+   `CaseState` stores the current phase, conversation, facts, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
+
+## Design Decisions
+
+The main design decision is to keep the LLM and runtime separate. The LLM proposes what to do next, but the runtime controls whether that action is valid, safe, and allowed in the current workflow state.
+
+`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, known facts, tool results, confidence, failed resolutions, and escalation context.
+
+The runtime uses a ReAct-style loop, but tool execution is controlled by the system. The model can request a tool, but the runtime validates the request, checks limits and policy boundaries, executes the tool, and feeds the result back into the next step.
+
+Escalation is handled as a first-class outcome. If the issue requires human approval, is outside supported scope, repeatedly fails, or hits runtime limits, the system creates a handoff summary for human IT instead of pretending to solve the case.
+
+This design keeps the agent flexible enough to handle vague IT issues while keeping the workflow explicit, auditable, and bounded by runtime rules.
+
+## Resolution vs. Escalation Boundary
+
+The agent resolves only when the answer is grounded in tool evidence and allowed by policy.
+
+Low confidence blocks `resolve`; it does not automatically trigger escalation.
+
+Escalation happens only when policy marks the action as human-only, resolution attempts are exhausted, or runtime safety limits are reached.
+
+Approval-gated requests should be routed through the approval path rather than directly handed off by default.
+
+On escalation, the system creates a handoff summary with the case context, tool results, policy boundary, and escalation reason.
+
+## Simulated Data Sources
+
+The system uses four mocked internal IT data sources:
+
+- Knowledge base: troubleshooting articles for common employee issues.
+- System status: service health and known incidents.
+- Policy rules: authorization boundaries for what the agent may resolve, what must follow an approval path, and what requires human IT.
+- Resolution history: similar past cases and whether they were resolved by the agent or escalated to human IT.
+
+These sources keep the agent grounded in auditable runtime evidence instead of model knowledge alone.
+
+## Assumptions and Tradeoffs
+
+- Assumption: Most helpdesk cases should make progress within a small number of agent steps, tool calls, and clarification attempts.  
+  Tradeoff: Fixed runtime limits prevent runaway loops and cost growth, but difficult cases may be escalated or closed earlier than a human would.
+
+- Assumption: IT support answers should be grounded in tool results and case evidence, not model knowledge alone.  
+  Tradeoff: This improves reliability and traceability, but increases latency and makes answer quality depend on tool coverage.
+
+- Assumption: Successful tool results provide useful evidence for estimating confidence.  
+  Tradeoff: This makes confidence simple and enforceable at runtime, but can overestimate confidence if a tool succeeds while returning weak, stale, or only loosely relevant information.
+
+- Assumption: The LLM should propose actions, while the runtime owns validation, execution, policy checks, and state transitions.  
+  Tradeoff: This improves safety and predictability, but requires additional runtime logic such as validators, guards, policies, and transition rules.
+
+- Assumption: Most IT support cases follow a predictable workflow: intake, clarification, investigation, resolution, and escalation.  
+  Tradeoff: This improves control, testing, and auditability, but is less flexible than a fully autonomous agent.
+
+## How to run
 
 ### Prerequisites
 
@@ -105,96 +189,41 @@ Run the scenario evaluator:
 uv run python -m evaluation.runner
 ```
 
-## IT Support Problem
-
-This project focuses on employee-facing IT helpdesk triage for a small set of common workplace IT issues.
-
-The agent can attempt safe guidance for VPN connectivity troubleshooting, password reset self-service guidance, and service status checks for known incidents.
-
-The agent must escalate or route through policy for MFA recovery, permission or access grants, and infrastructure or network configuration changes.
-
-I chose this problem because these cases are common, repetitive, and naturally test the boundaries of an agentic system. Some issues can be handled with safe troubleshooting guidance, while others require policy checks, approval, or human escalation. This makes the problem a good fit for explicit runtime state, tool grounding, and policy-controlled resolution versus escalation.
-
-## Why an Agentic Approach
-
-A simple FAQ bot is not enough because IT issues are often vague, incomplete, and require checking internal context.
-
-An agentic approach fits because the system can ask follow-up questions, call tools, update case state, and decide whether to resolve or escalate. The runtime controls these steps with validation, policy checks, and explicit workflow state.
-
-## Architecture
-
-The system has five main layers:
-
-1. Input Interface
-   The employee sends an issue through the API or CLI. Each message belongs to a case, so the system can continue the same support conversation across turns.
-
-2. Runtime Controller
-   The runtime is the main control layer. It builds context, runs the ReAct loop, validates proposed actions, calls tools, updates case state, and decides when to ask the user, continue investigating, resolve, or escalate.
-
-3. LLM Agent
-   The LLM does not directly control the workflow. It receives the current case context and returns a structured proposal, such as asking a question, calling a tool, suggesting a resolution, or escalating.
-
-4. Tools and Data Sources
-   Tools provide grounded information from mock internal systems, including knowledge base articles, system status, policies, and resolution history.
-
-5. State and Observability
-   `CaseState` stores the current phase, conversation, facts, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
-
-## Design Decisions
-
-The main design decision is to keep the LLM and runtime separate. The LLM proposes what to do next, but the runtime controls whether that action is valid, safe, and allowed in the current workflow state.
-
-`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, known facts, tool results, confidence, failed resolutions, and escalation context.
-
-The runtime uses a ReAct-style loop, but tool execution is controlled by the system. The model can request a tool, but the runtime validates the request, checks limits and policy boundaries, executes the tool, and feeds the result back into the next step.
-
-Escalation is handled as a first-class outcome. If the issue is risky, unresolved, outside tool coverage, or below the confidence threshold, the system creates a handoff summary for human IT instead of pretending to solve the case.
-
-This design keeps the agent flexible enough to handle vague IT issues while keeping the workflow explicit, auditable, and bounded by runtime rules.
-
-## Resolution vs. Escalation Boundary
-
-The agent resolves only when the runtime has enough evidence, confidence, and policy approval to provide safe guidance.
-
-The agent escalates when the issue is risky, outside tool coverage, restricted by policy, repeatedly unresolved, or too uncertain to answer safely.
-
-On escalation, the system creates a handoff summary with the case context, tool results, and escalation reason for human IT.
-
-## Simulated Data Sources
-
-The project simulates four internal IT data sources:
-
-- Knowledge base: troubleshooting articles for common issues.
-- System status: current service health and known incidents.
-- Policy rules: what the agent is allowed to resolve versus what requires human IT.
-- Resolution history: similar past cases and how they were handled.
-
-These sources were chosen because real IT support usually depends on internal documentation, live service status, business rules, and previous ticket patterns rather than model knowledge alone.
-
-## Assumptions and Tradeoffs
-
-- Assumption: Most IT support cases follow a predictable workflow.
-  Tradeoff: This improves control, testing, and auditability, but is less flexible than a fully autonomous agent.
-
-- Assumption: The LLM should propose actions, while the runtime owns execution, validation, and state transitions.
-  Tradeoff: This improves safety and predictability, but requires additional runtime logic such as validators, guards, and policies.
-
-- Assumption: Support decisions should be grounded in tool results and case evidence rather than model intuition alone.
-  Tradeoff: This improves reliability and traceability, but increases latency and makes answer quality dependent on tool coverage.
-
 ## Evaluation
 
-I evaluated the system with automated test cases and scenario-based runs.
+The project uses scenario-based evaluation in addition to unit tests.
 
-The unit tests check the core runtime behavior: state transitions, action validation, policy boundaries, tool execution, message building, API routes, and CLI behavior.
+Each evaluation scenario simulates a realistic IT support conversation and checks the expected outcome, such as whether the case should resolve, escalate, or use tools before responding. The scenario runner measures final state and basic runtime behavior, including escalation status, resolution status, and tool-call counts.
 
-The scenario suite contains six conversations that mirror the project scope: three safe-guidance cases and three boundary cases.
+The evaluation scenarios cover:
+- safe self-service guidance, such as VPN troubleshooting and password reset;
+- clarification flows where the agent must ask for missing information;
+- policy-routed requests, such as access grants that require approval;
+- human-only cases, such as MFA recovery and network configuration changes;
+- known service incidents, such as degraded Salesforce status.
 
-Safe-guidance cases cover VPN troubleshooting, password reset guidance, and known service degradation checks.
+Unit tests cover the lower-level runtime control flow, including action validation, policy checks, invalid proposal recovery, tool limits, and state transitions.
 
-Boundary cases cover MFA recovery escalation, access-grant policy routing, and network configuration escalation.
+The goal is not only to check whether the final answer sounds reasonable, but also whether the runtime follows the intended control path:
 
-The main evaluation criteria are whether the agent resolves safe cases, escalates risky or unsupported cases, uses tools before giving guidance, and preserves enough context for human IT handoff.
+```text
+LLM proposal → workflow guard → policy check → action execution → state transition
+
+
+## Future Improvements
+
+With more time, I would improve evaluation, confidence calibration, and policy routing.
+
+The current evaluation checks final outcomes and basic runtime behavior. A stronger version would also score the full control path: action sequence, tool choice, policy compliance, and whether the agent avoided unnecessary clarification or escalation.
+
+The current confidence score is a simple evidence-based heuristic from successful tool results. I would calibrate it with labeled support cases and account for evidence quality, freshness, and relevance.
+
+The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
+
+
+## Optional Design Note
+
+The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
 
 ## Observability
 
@@ -205,15 +234,3 @@ The system records runtime events, case state, tool traces, confidence, and esca
 The project keeps external dependencies small and focused. FastAPI and Uvicorn serve the API, OpenAI provides the LLM client, Pydantic handles structured request/response models, and python-dotenv / pydantic-settings load local configuration.
 
 Development dependencies are limited to pytest for tests and httpx for API route testing.
-
-## Future Improvements
-
-With more time, I would improve the coordination between workflow state, confidence, and policy decisions.
-
-Right now the runtime uses explicit rules to decide when to continue investigating, resolve, or escalate. A stronger version would calibrate confidence with more labeled evaluation data, make policy boundaries more fine-grained, and test more edge cases around repeated failures, ambiguous user input, and partial resolutions.
-
-I would also improve the evaluation harness so it can measure not only final outcomes, but also whether the agent took the right path through the workflow.
-
-## Optional Design Note
-
-The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
