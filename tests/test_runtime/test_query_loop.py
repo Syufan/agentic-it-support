@@ -885,16 +885,14 @@ def test_vpn_timeout_resolution_requires_user_environment_context():
     assert case.phase == Phase.CLARIFYING
 
 
-def test_access_grant_request_retries_to_policy_route_not_user_lookup():
+def test_access_grant_approval_path_resolution_is_allowed():
+    # An access grant is handled by resolving with the approval path (not escalated).
+    # policy/engine allows the approval-path resolve; nothing in the runtime forces a
+    # user-id lookup or hands it off.
     case = CaseState(phase=Phase.INVESTIGATING)
     case.conversation = [
         {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
     ]
-    ask_user = _proposal(
-        action=AgentAction.ASK_USER,
-        message="Please provide your user ID.",
-        missing_info=["user ID"],
-    )
     policy_route = _proposal(
         action=AgentAction.RESOLVE,
         message="I can't grant Snowflake write access directly. Snowflake write access requires approval through the IT portal with business justification.",
@@ -902,7 +900,7 @@ def test_access_grant_request_retries_to_policy_route_not_user_lookup():
     case.tool_traces = [ToolTrace(tool_name="kb_search", inputs={}, output={"results": ["software access"]}, success=True)]
     case.tool_calls_total = 1
     case.confidence = 0.35
-    response = run_turn(case, "I need it for analytics.", MockLLMClient([ask_user, policy_route]), {})
+    response = run_turn(case, "I need it for analytics.", MockLLMClient([policy_route]), {})
     assert "can't grant" in response.lower()
     assert "approval" in response.lower()
     assert case.handoff_completed is False

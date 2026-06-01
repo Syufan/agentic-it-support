@@ -108,30 +108,20 @@ def test_vpn_timeout_resolve_allowed_with_environment_context():
     ).allowed
 
 
-def test_access_grant_ask_user_blocked_until_policy_boundary_explained():
+def test_diagnosis_policy_does_not_dictate_access_grant_method():
+    # The approval path is steered by the phase prompts and enforced by policy/engine
+    # on the resolve/escalate action — diag no longer hardcodes "ask user vs explain
+    # approval" method rules (which previously deadlocked against the grounding gate).
     case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
     case.conversation = [
         {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
     ]
-    decision = check_diagnosis_policy(
-        case,
-        _proposal(action=AgentAction.ASK_USER, message="What is your user ID?"),
-    )
-    assert decision.allowed is False
-    assert "approval path" in decision.correction.lower()
-
-
-def test_access_grant_resolution_requires_no_direct_grant_boundary():
-    case = _case(phase=Phase.INVESTIGATING, confidence=0.35)
-    case.conversation = [
-        {"role": "user", "content": "I need write access to Snowflake. Can you give me access?"},
-    ]
-    decision = check_diagnosis_policy(
-        case,
-        _proposal(action=AgentAction.RESOLVE, message="Submit a request in the IT portal."),
-    )
-    assert decision.allowed is False
-    assert "cannot directly grant" in decision.correction.lower()
+    assert check_diagnosis_policy(
+        case, _proposal(action=AgentAction.ASK_USER, message="What is your user ID?")
+    ).allowed
+    assert check_diagnosis_policy(
+        case, _proposal(action=AgentAction.RESOLVE, message="Submit a request in the IT portal.")
+    ).allowed
 
 
 def test_tool_case_limit_reached_blocks_ordinary_clarifying_question():

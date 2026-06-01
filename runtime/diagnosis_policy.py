@@ -70,15 +70,6 @@ def check_diagnosis_policy(
                     "device/OS and VPN client, or use the existing answer if already provided."
                 ),
             )
-        if _access_grant_resolution_missing_boundary(case, proposal):
-            return DiagnosisPolicyDecision(
-                False,
-                "access-grant response missing policy boundary",
-                (
-                    "Explain the approval path and clearly state that the agent cannot "
-                    "directly grant this access. Mention the relevant approval requirement."
-                ),
-            )
         if case.confidence < CONFIDENCE_RESOLVE_MIN:
             return DiagnosisPolicyDecision(
                 False,
@@ -89,16 +80,9 @@ def check_diagnosis_policy(
                 ),
             )
 
-    if proposal.action == AgentAction.ASK_USER:
-        if _access_grant_user_lookup_before_policy(case, proposal):
-            return DiagnosisPolicyDecision(
-                False,
-                "access-grant request needs policy route before user lookup",
-                (
-                    "Do not start by collecting a user ID for an access grant. First explain "
-                    "the approval path and that the agent cannot directly grant access."
-                ),
-            )
+    # Approval-path handling for access-grant requests is NOT a runtime method rule:
+    # the phase prompts steer the agent to explain the approval path, and
+    # policy/engine.py enforces the authority boundary on the resolve/escalate action.
 
     return DiagnosisPolicyDecision(True)
 
@@ -187,22 +171,6 @@ _VPN_TIMEOUT_MARKERS = {
     "unable to connect",
 }
 
-_ACCESS_GRANT_MARKERS = {
-    "give me access",
-    "grant access",
-    "need access",
-    "write access",
-}
-
-_ACCESS_SYSTEM_MARKERS = {
-    "snowflake",
-    "grafana",
-    "salesforce",
-    "adobe",
-    "github",
-    "aws",
-}
-
 def needs_issue_description(case: CaseState, user_message: str) -> bool:
     if case.phase != Phase.INTAKE:
         return False
@@ -247,41 +215,6 @@ def _vpn_timeout_resolution_missing_environment(case: CaseState) -> bool:
     if not any(marker in text for marker in _VPN_TIMEOUT_MARKERS):
         return False
     return not any(marker in text for marker in _VPN_ENVIRONMENT_MARKERS)
-
-
-def _access_grant_user_lookup_before_policy(case: CaseState, proposal: AgentProposal) -> bool:
-    text = _conversation_text(case)
-    if not _is_access_grant_request(text):
-        return False
-    message = (proposal.message or "").lower()
-    return any(marker in message for marker in ("user id", "email", "employee id"))
-
-
-def _access_grant_resolution_missing_boundary(case: CaseState, proposal: AgentProposal) -> bool:
-    text = _conversation_text(case)
-    if not _is_access_grant_request(text):
-        return False
-    message = (proposal.message or "").lower()
-    has_no_direct_grant_boundary = any(
-        marker in message
-        for marker in (
-            "can't grant",
-            "cannot grant",
-            "can’t grant",
-            "not able to grant",
-            "not grant",
-            "do not grant",
-            "approval",
-        )
-    )
-    return not has_no_direct_grant_boundary
-
-
-def _is_access_grant_request(text: str) -> bool:
-    return (
-        any(marker in text for marker in _ACCESS_GRANT_MARKERS)
-        and any(marker in text for marker in _ACCESS_SYSTEM_MARKERS)
-    )
 
 
 # ── §2. Escalation gating ──────────────────────────────────────────────────────
