@@ -21,11 +21,28 @@ def test_main_app_health_check(monkeypatch):
     assert response.json() == {"status": "ok"}
 
 
-def test_main_chat_uses_stub_turn_runner(monkeypatch):
+def test_main_wires_real_turn_runner_into_chat(monkeypatch):
+    captured = {}
+
+    def fake_run_turn(case, user_message, *, llm, tools, settings):
+        captured["user_message"] = user_message
+        captured["llm"] = llm
+        captured["tools"] = tools
+        captured["settings"] = settings
+        return "handled by runtime"
+
+    import agentic_it_support.runtime.turn_runner as turn_runner_module
+
+    monkeypatch.setattr(turn_runner_module, "run_turn", fake_run_turn)
+
     main_module = _load_main(monkeypatch)
     client = TestClient(main_module.app)
 
     response = client.post("/chat", json={"message": "VPN is broken"})
 
     assert response.status_code == 200
-    assert response.json()["message"] == "API is wired. Runtime is temporarily disabled."
+    assert response.json()["message"] == "handled by runtime"
+    # main must inject llm, tools and settings into run_turn via partial
+    assert captured["user_message"] == "VPN is broken"
+    assert captured["llm"] is not None
+    assert captured["settings"] is not None

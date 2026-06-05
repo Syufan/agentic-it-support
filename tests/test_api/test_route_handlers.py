@@ -5,7 +5,7 @@ from agentic_it_support.state.session import SessionStore
 
 
 def _runner(message: str = "handled"):
-    def run(case, user_message, llm, tools):
+    def run(case, user_message):
         return message
 
     return run
