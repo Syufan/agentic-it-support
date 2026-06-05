@@ -1,4 +1,4 @@
-from state.case_state import CaseState
+from agentic_it_support.state.case_state import CaseState
 
 
 class SessionStore:
