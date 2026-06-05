@@ -32,13 +32,13 @@ The system has five main layers:
    Tools provide grounded information from mock internal systems, including knowledge base articles, system status, policies, and resolution history.
 
 5. State and Observability
-   `CaseState` stores the current phase, conversation, facts, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
+   `CaseState` stores the current phase, conversation, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
 
 ## Design Decisions
 
 The main design decision is to keep the LLM and runtime separate. The LLM proposes what to do next, but the runtime controls whether that action is valid, safe, and allowed in the current workflow state.
 
-`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, known facts, tool results, confidence, failed resolutions, and escalation context.
+`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, conversation, tool results, confidence, failed resolutions, and escalation context.
 
 The runtime uses a ReAct-style loop, but tool execution is controlled by the system. The model can request a tool, but the runtime validates the request, checks limits and policy boundaries, executes the tool, and feeds the result back into the next step.
 
@@ -224,7 +224,7 @@ The current confidence score is a simple evidence-based heuristic from successfu
 
 ### 3. Planning and Structured Clarification
 
-For complex or ambiguous cases, I would add a planning mode before normal investigation begins. The agent would first produce a diagnostic plan with known facts, missing facts, affected system, risk level, tools to check, and escalation boundary.
+For complex or ambiguous cases, I would add a planning mode before normal investigation begins. The agent would first produce a diagnostic plan with missing context, affected system, risk level, tools to check, and escalation boundary.
 
 I would also replace free-form clarification with a structured clarification tool. Each question would be tied to a missing case field, so the runtime can tell whether the case is ready for investigation or still needs user input.
 
@@ -238,7 +238,7 @@ I did not implement the full grounding state in this prototype because it would 
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
 
-I would also add memory filtering and context projection. The current system keeps the conversation in case state and sends a bounded case snapshot to the model. A production version should extract useful facts into structured state and send only the relevant context for the current step.
+I would also add memory filtering and context projection. The current system keeps the conversation in case state and sends a bounded case snapshot to the model. A production version should extract useful context into structured state and send only the relevant context for the current step.
 
 
 ## Optional Design Note
