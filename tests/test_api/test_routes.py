@@ -8,7 +8,7 @@ from agentic_it_support.state.session import SessionStore
 def _runner(responses: list[str] | None = None):
     queue = list(responses or ["What OS are you using?"])
 
-    def run(case, user_message, llm, tools):
+    def run(case, user_message):
         return queue.pop(0) if queue else "handled"
 
     return run
