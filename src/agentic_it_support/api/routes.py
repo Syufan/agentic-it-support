@@ -18,7 +18,8 @@ def build_router(*, llm: Any, tools: dict[str, Any], store: Any, turn_runner: Ca
     @router.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest) -> ChatResponse:
         case = _get_or_create_case(store, request.case_id)
-        message = turn_runner(case, request.message, llm, tools)
+        # mutates case in place, returns reply
+        message = turn_runner(case, request.message)
         return _to_chat_response(case, message)
 
     # Reserved for future dashboard.
