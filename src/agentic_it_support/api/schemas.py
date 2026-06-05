@@ -23,12 +23,10 @@ class ChatResponse(BaseModel):
 
 
 class CaseView(BaseModel):
-    """Full case snapshot, including the human-handoff package when escalated."""
-
+    """Reserved for future dashboard."""
     case_id: str
     phase: str
     is_closed: bool
     confidence: float
     tool_calls_total: int
-    facts: dict[str, Any]
     escalation_context: dict[str, Any] | None

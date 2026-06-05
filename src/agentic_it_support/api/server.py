@@ -1,23 +1,13 @@
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import FastAPI
 
-from llm.client import BaseLLMClient
-from api.routes import build_router
-from state.case_state import CaseState
-from state.session import SessionStore
-from tools.base import BaseTool
+from agentic_it_support.api.routes import build_router
 
 
 class ITSupportWebServer:
-    def __init__(
-        self,
-        *,
-        llm: BaseLLMClient,
-        tools: dict[str, BaseTool],
-        store: SessionStore,
-        turn_runner: Callable[[CaseState, str, BaseLLMClient, dict[str, BaseTool]], str],
-    ) -> None:
+    def __init__(self, *, llm: Any, tools: dict[str, Any], store: Any, turn_runner: Callable[..., str]) -> None:
         self._llm = llm
         self._tools = tools
         self._store = store
