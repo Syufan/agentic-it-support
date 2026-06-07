@@ -4,16 +4,13 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent.parser import parse_proposal
-from config.settings import Settings
-from llm.client import BaseLLMClient, RealLLMClient
-from observability.event_tracing import InMemoryEventLog
-from runtime import limits
-from runtime.query_loop import TurnCancelled, run_turn
-from state.case_state import CaseState, Phase
-from tools import DEFAULT_TOOLS
-
-_TOOLS = DEFAULT_TOOLS
+from agentic_it_support.agent.parser import parse_proposal
+from agentic_it_support.config.settings import Settings
+from agentic_it_support.llm.client import BaseLLMClient, RealLLMClient
+from agentic_it_support.observability.event_tracing import InMemoryEventLog
+from agentic_it_support.runtime.turn_runner import run_turn
+from agentic_it_support.state.case_state import CaseState, Phase
+from agentic_it_support.tools import build_tools
 
 _DIM = "\033[2m"
 _BOLD = "\033[1m"
@@ -96,6 +93,7 @@ def run_cli_session(
     case: CaseState,
     llm: BaseLLMClient,
     tools: dict,
+    settings: Settings,
     reader: Callable[[str], str] = input,
     writer: Callable[[str], None] = print,
     clear: Callable[[], None] = lambda: os.system("cls" if os.name == "nt" else "clear"),
@@ -121,7 +119,7 @@ def run_cli_session(
             continue
 
         if user_input.startswith("/"):
-            if _handle_command(user_input, case, event_log, writer, clear):
+            if _handle_command(user_input, case, event_log, settings, writer, clear):
                 break
             continue
 
@@ -133,17 +131,10 @@ def run_cli_session(
                 writer=lambda text: (sys.stdout.write(f"{_DIM}{text}{_RESET}"), sys.stdout.flush()),
             )
         spinner.start()
-        cancelled = False
         try:
-            response = run_one_turn(case, user_input, llm, tools, event_log)
-        except TurnCancelled:
-            cancelled = True
+            response = run_one_turn(case, user_input, llm, tools, settings)
         finally:
             spinner.stop()
-
-        if cancelled:
-            writer(f"{_DIM}— turn cancelled, continue the conversation —{_RESET}")
-            continue
 
         writer("")
         writer(f"{_BOLD}Agent:{_RESET}")
@@ -159,61 +150,9 @@ def _interruptible_run_turn(
     user_input: str,
     llm: BaseLLMClient,
     tools: dict,
-    event_log: InMemoryEventLog,
+    settings: Settings,
 ) -> str:
-    """Run a turn, letting the user cancel it by pressing ESC while it works.
-
-    The turn runs on a worker thread while this thread watches stdin (in cbreak
-    mode) for ESC. Cancellation is cooperative: it takes effect at the next
-    checkpoint in run_turn, so an in-flight provider call finishes first. When
-    stdin is not a real terminal (tests, pipes) we just run the turn directly.
-    """
-    if not _stdin_is_tty():
-        return run_turn(case, user_input, llm, tools, event_log=event_log)
-
-    try:
-        import select
-        import termios
-        import tty
-    except ImportError:  # non-POSIX terminal: fall back to a plain turn
-        return run_turn(case, user_input, llm, tools, event_log=event_log)
-
-    cancel = threading.Event()
-    box: dict = {}
-
-    def _work() -> None:
-        try:
-            box["value"] = run_turn(
-                case, user_input, llm, tools,
-                event_log=event_log, should_cancel=cancel.is_set,
-            )
-        except TurnCancelled:
-            box["cancelled"] = True
-        except BaseException as exc:  # surface any other failure to the caller
-            box["error"] = exc
-
-    worker = threading.Thread(target=_work, daemon=True)
-    worker.start()
-
-    fd = sys.stdin.fileno()
-    old_attrs = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        while worker.is_alive():
-            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
-            if ready and sys.stdin.read(1) == _ESC:
-                cancel.set()
-                break
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
-
-    worker.join()
-
-    if "error" in box:
-        raise box["error"]
-    if box.get("cancelled"):
-        raise TurnCancelled()
-    return box["value"]
+    return run_turn(case, user_input, llm=llm, tools=tools, settings=settings)
 
 
 def _stdin_is_tty() -> bool:
@@ -233,6 +172,7 @@ def _handle_command(
     command: str,
     case: CaseState,
     event_log: InMemoryEventLog,
+    settings: Settings,
     writer: Callable[[str], None],
     clear: Callable[[], None],
 ) -> bool:
@@ -240,7 +180,7 @@ def _handle_command(
         case "/help":
             writer(_HELP.rstrip())
         case "/status":
-            writer(_format_status(case))
+            writer(_format_status(case, settings))
         case "/trace":
             writer(_format_trace(event_log))
         case "/clear":
@@ -254,14 +194,14 @@ def _handle_command(
     return False
 
 
-def _format_status(case: CaseState) -> str:
+def _format_status(case: CaseState, settings: Settings) -> str:
     remaining_turn_tools = max(
         0,
-        limits.MAX_TOOL_CALLS_PER_TURN - case.tool_calls_this_turn,
+        settings.limits.max_tool_calls_per_turn - case.tool_calls_this_turn,
     )
     remaining_case_tools = max(
         0,
-        limits.MAX_TOOL_CALLS_PER_CASE - case.tool_calls_total,
+        settings.limits.max_tool_calls_per_case - case.tool_calls_total,
     )
     return (
         f"[phase={case.phase.value} confidence={case.confidence:.2f} "
@@ -285,15 +225,20 @@ def _format_trace(event_log: InMemoryEventLog, limit: int = 8) -> str:
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
-    _settings = Settings()
+def main() -> None:
+    settings = Settings()
     run_cli_session(
         CaseState(),
         RealLLMClient(
             response_parser=parse_proposal,
-            api_key=_settings.llm_api_key,
-            model=_settings.llm_model,
-            temperature=_settings.llm_temperature,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            temperature=settings.llm_temperature,
         ),
-        _TOOLS,
+        build_tools(settings.data_dir),
+        settings,
     )
+
+
+if __name__ == "__main__":
+    main()

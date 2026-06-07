@@ -2,14 +2,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from tools.base import BaseTool, ToolResult
+from agentic_it_support.config.settings import DEFAULT_DATA_DIR
+from agentic_it_support.tools.base import BaseTool, ToolResult
 
-_USERS_FILE = Path(__file__).parent.parent / "data" / "user_directory" / "users.json"
+_USERS_FILE = DEFAULT_DATA_DIR / "user_directory" / "users.json"
 
 
 class UserDirectoryTool(BaseTool):
     name = "user_directory"
     description = "Look up employee info, department, role, equipment, and permissions"
+
+    def __init__(self, users_file: Path | None = None) -> None:
+        self._users_file = users_file or _USERS_FILE
 
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         user_id = str(inputs.get("user_id", "")).strip()
@@ -19,7 +23,7 @@ class UserDirectoryTool(BaseTool):
             return ToolResult(success=False, data={}, error="user_id or email is required")
 
         try:
-            users = json.loads(_USERS_FILE.read_text(encoding="utf-8"))
+            users = json.loads(self._users_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return ToolResult(success=False, data={}, error=f"user directory unavailable: {exc}")
 

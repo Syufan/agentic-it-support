@@ -2,9 +2,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from tools.base import BaseTool, ToolResult
+from agentic_it_support.config.settings import DEFAULT_DATA_DIR
+from agentic_it_support.tools.base import BaseTool, ToolResult
 
-_KB_DIR = Path(__file__).parent.parent / "data" / "knowledge_base"
+_KB_DIR = DEFAULT_DATA_DIR / "knowledge_base"
 
 
 def _tokenize(text: str) -> set[str]:
@@ -15,6 +16,9 @@ class KBSearchTool(BaseTool):
     name = "kb_search"
     description = "Search internal knowledge base articles and troubleshooting guides"
 
+    def __init__(self, kb_dir: Path | None = None) -> None:
+        self._kb_dir = kb_dir or _KB_DIR
+
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         query = str(inputs.get("query", "")).strip()
         if not query:
@@ -23,7 +27,7 @@ class KBSearchTool(BaseTool):
         terms = _tokenize(query)
         results = []
 
-        for path in _KB_DIR.glob("*.md"):
+        for path in self._kb_dir.glob("*.md"):
             content = path.read_text(encoding="utf-8")
             words = _tokenize(content)
             matches = len(terms & words)

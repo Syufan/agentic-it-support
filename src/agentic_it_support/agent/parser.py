@@ -5,7 +5,7 @@ from json import JSONDecodeError
 
 from pydantic import ValidationError
 
-from agent.proposals import AgentProposal
+from agentic_it_support.agent.proposals import AgentProposal
 
 
 class ProposalParseError(Exception):

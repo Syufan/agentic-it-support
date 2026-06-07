@@ -2,18 +2,22 @@ import json
 from pathlib import Path
 from typing import Any
 
-from tools.base import BaseTool, ToolResult
+from agentic_it_support.config.settings import DEFAULT_DATA_DIR
+from agentic_it_support.tools.base import BaseTool, ToolResult
 
-_STATUS_FILE = Path(__file__).parent.parent / "data" / "system_status" / "status.json"
+_STATUS_FILE = DEFAULT_DATA_DIR / "system_status" / "status.json"
 
 
 class StatusAPITool(BaseTool):
     name = "status_api"
     description = "Check current status of internal services and known incidents"
 
+    def __init__(self, status_file: Path | None = None) -> None:
+        self._status_file = status_file or _STATUS_FILE
+
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         try:
-            data = json.loads(_STATUS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(self._status_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return ToolResult(success=False, data={}, error=f"status data unavailable: {exc}")
         services = data["services"]

@@ -1,8 +1,8 @@
 import json
 
-from agent.prompts import clarifying, escalating, intake, investigating, resolving
-from llm.client import LLMInput
-from state.case_state import CaseState, Phase
+from agentic_it_support.agent.prompts import clarifying, escalating, intake, investigating, resolving
+from agentic_it_support.llm.client import LLMInput
+from agentic_it_support.state.case_state import CaseState, Phase
 
 _PROMPTS: dict[Phase, str] = {
     Phase.INTAKE:        intake.SYSTEM_PROMPT,
@@ -11,13 +11,23 @@ _PROMPTS: dict[Phase, str] = {
     Phase.RESOLVING:     resolving.SYSTEM_PROMPT,
     Phase.ESCALATING:    escalating.SYSTEM_PROMPT,
 }
-
+'''
+    移动到prompt init里 让message builder 直接import一个prompt，不用自己维护这个映射
+''' 
 # Limit tool context sent to the LLM.
 _MAX_TOOL_TRACES_IN_CONTEXT = 3
 _TOOL_OUTPUT_PREVIEW_CHARS = 1000
-
+'''
+    移动到config里去
+''' 
 
 def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
+    '''
+        选system prompt
+        附上纠正信息
+        messages 复制历史对话
+        observation 映射对话信息 用于状态查看
+    '''
     
     # Select the phase-specific system prompt and apply any correction.
     system = _PROMPTS.get(case.phase, investigating.SYSTEM_PROMPT)
@@ -33,6 +43,12 @@ def build_messages(case: CaseState, correction: str | None = None) -> LLMInput:
         messages[-1]["content"] = messages[-1]["content"] + "\n\n" + observation
     else:
         messages.append({"role": "user", "content": observation})
+    '''
+        用open AI 的tool message格式来附加observation会最好，让后phase没必要进去的
+        所以observation只给外部观看，message的拼接自己提取工具的内容
+        后续没必要这么复杂的，再研究研究
+        核心是什么信息对于llm来说是好用的
+    '''
 
     return LLMInput(system=system, messages=messages)
 
@@ -44,16 +60,6 @@ def _build_observation(case: CaseState) -> str:
         f"Phase: {case.phase.value}",
     ]
 
-    # Add structured case memory.
-    if case.facts:
-        lines.append(f"Facts: {json.dumps(case.facts)}")
-    
-    if case.hypotheses:
-        lines.append(f"Hypotheses: {'; '.join(case.hypotheses)}")
-
-    if case.missing_info:
-        lines.append(f"Missing info: {', '.join(case.missing_info)}")
-
     # Add the most recent bounded tool results.
     if case.tool_traces:
         lines.append("Tool results:")
@@ -61,9 +67,10 @@ def _build_observation(case: CaseState) -> str:
             status = "ok" if trace.success else "failed"
             output_preview = json.dumps(trace.output)[:_TOOL_OUTPUT_PREVIEW_CHARS]
             lines.append(f"  [{status}] {trace.tool_name}: {output_preview}")
-
-    # Tell the LLM if previous resolution attempts failed.
-    if case.failed_resolutions:
-        lines.append(f"Failed resolutions: {len(case.failed_resolutions)}")
+    '''
+        只是取最近的3条，每条工具的内容1000
+        工程话 这里可以好好改改
+        考虑到agent要看到的内容有多少
+    '''
 
     return "\n".join(lines)

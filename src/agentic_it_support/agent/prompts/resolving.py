@@ -12,7 +12,7 @@ Respond with a single JSON object and nothing else:
 
 ```json
 {
-  "action": "resolve" | "ask_user",
+  "action": "ask_user",
   "message": "response or follow-up message to the employee",
   "user_confirmed_resolution": true | false | null
 }

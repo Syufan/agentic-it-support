@@ -10,6 +10,24 @@ class AgentAction(str, Enum):
     RESOLVE = "resolve"
     ESCALATE = "escalate"
 
+'''
+INTAKE
+- ASK_USER → 转 CLARIFYING ✓
+- CALL_TOOL → 转 INVESTIGATING ✓
+
+CLARIFYING
+- ASK_USER → 留在 CLARIFYING ✓
+- CALL_TOOL → 转 INVESTIGATING ✓
+- ESCALATE → 直接升级 ✓
+
+INVESTIGATING
+- ASK_USER → 转 CLARIFYING ✓
+- CALL_TOOL → 留在 INVESTIGATING ✓
+- RESOLVE → 转 RESOLVING ✓
+- ESCALATE → 直接升级 ✓
+
+'''
+
 
 class AgentProposal(BaseModel):
     """Structured action proposal returned by the LLM."""

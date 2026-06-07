@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from runtime.limits import MAX_TOOL_CALLS_PER_CASE
-from state.case_state import CaseState, Phase
+from agentic_it_support.runtime.limits import MAX_TOOL_CALLS_PER_CASE
+from agentic_it_support.state.case_state import CaseState, Phase
 
 
 @dataclass

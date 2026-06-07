@@ -11,13 +11,13 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent.parser import parse_proposal
-from config.settings import Settings
+from agentic_it_support.agent.parser import parse_proposal
+from agentic_it_support.config.settings import Settings
 from evaluation import EvaluationResult, evaluate
-from llm.client import BaseLLMClient, RealLLMClient
-from runtime.query_loop import run_turn
-from state.case_state import CaseState
-from tools import DEFAULT_TOOLS
+from agentic_it_support.llm.client import BaseLLMClient, RealLLMClient
+from agentic_it_support.runtime.query_loop import run_turn
+from agentic_it_support.state.case_state import CaseState
+from agentic_it_support.tools import build_tools
 
 _SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 
@@ -33,11 +33,12 @@ class ScenarioResult:
 def run_scenario(path: Path, llm: BaseLLMClient, settings: Settings) -> ScenarioResult:
     scenario = json.loads(path.read_text())
     case = CaseState()
+    tools = build_tools(settings.data_dir)
     responses: list[str] = []
 
     try:
         for message in scenario["messages"]:
-            responses.append(run_turn(case, message, llm, DEFAULT_TOOLS, settings=settings))
+            responses.append(run_turn(case, message, llm, tools, settings=settings))
     except Exception:
         # Keep per-scenario isolation, but preserve the full traceback so a real
         # bug surfaces its stack instead of being flattened to a one-line message.

@@ -3,9 +3,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from tools.base import BaseTool, ToolResult
+from agentic_it_support.config.settings import DEFAULT_DATA_DIR
+from agentic_it_support.tools.base import BaseTool, ToolResult
 
-_HISTORY_FILE = Path(__file__).parent.parent / "data" / "resolution_history" / "history.json"
+_HISTORY_FILE = DEFAULT_DATA_DIR / "resolution_history" / "history.json"
 
 
 def _tokenize(text: str) -> set[str]:
@@ -16,13 +17,16 @@ class ResolutionHistoryTool(BaseTool):
     name = "resolution_history"
     description = "Search past resolved IT tickets for similar issues and how they were fixed"
 
+    def __init__(self, history_file: Path | None = None) -> None:
+        self._history_file = history_file or _HISTORY_FILE
+
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         query = str(inputs.get("query", "")).strip()
         if not query:
             return ToolResult(success=False, data={}, error="query is required")
 
         try:
-            incidents = json.loads(_HISTORY_FILE.read_text(encoding="utf-8"))
+            incidents = json.loads(self._history_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return ToolResult(success=False, data={}, error=f"resolution history unavailable: {exc}")
 
