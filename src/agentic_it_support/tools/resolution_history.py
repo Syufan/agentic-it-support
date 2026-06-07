@@ -3,10 +3,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agentic_it_support.config.settings import DEFAULT_DATA_DIR
 from agentic_it_support.tools.base import BaseTool, ToolResult
-
-_HISTORY_FILE = DEFAULT_DATA_DIR / "resolution_history" / "history.json"
 
 
 def _tokenize(text: str) -> set[str]:
@@ -17,8 +14,8 @@ class ResolutionHistoryTool(BaseTool):
     name = "resolution_history"
     description = "Search past resolved IT tickets for similar issues and how they were fixed"
 
-    def __init__(self, history_file: Path | None = None) -> None:
-        self._history_file = history_file or _HISTORY_FILE
+    def __init__(self, history_file: Path) -> None:
+        self._history_file = history_file
 
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         query = str(inputs.get("query", "")).strip()

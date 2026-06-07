@@ -2,22 +2,16 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agentic_it_support.config.settings import DEFAULT_DATA_DIR
 from agentic_it_support.tools.base import BaseTool, ToolResult
 
-_KB_DIR = DEFAULT_DATA_DIR / "knowledge_base"
-
-
-def _tokenize(text: str) -> set[str]:
-    return set(re.findall(r"\b\w+\b", text.lower()))
-
+_MAX_RESULTS = 3
 
 class KBSearchTool(BaseTool):
     name = "kb_search"
     description = "Search internal knowledge base articles and troubleshooting guides"
 
-    def __init__(self, kb_dir: Path | None = None) -> None:
-        self._kb_dir = kb_dir or _KB_DIR
+    def __init__(self, kb_dir: Path) -> None:
+        self._kb_dir = kb_dir
 
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         query = str(inputs.get("query", "")).strip()
@@ -40,4 +34,7 @@ class KBSearchTool(BaseTool):
                 })
 
         results.sort(key=lambda a: a["score"], reverse=True)
-        return ToolResult(success=True, data={"results": results})
+        return ToolResult(success=True, data={"results": results[:_MAX_RESULTS]})
+
+def _tokenize(text: str) -> set[str]:
+    return set(re.findall(r"\b\w+\b", text.lower()))

@@ -2,18 +2,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agentic_it_support.config.settings import DEFAULT_DATA_DIR
 from agentic_it_support.tools.base import BaseTool, ToolResult
-
-_STATUS_FILE = DEFAULT_DATA_DIR / "system_status" / "status.json"
 
 
 class StatusAPITool(BaseTool):
     name = "status_api"
     description = "Check current status of internal services and known incidents"
 
-    def __init__(self, status_file: Path | None = None) -> None:
-        self._status_file = status_file or _STATUS_FILE
+    def __init__(self, status_file: Path) -> None:
+        self._status_file = status_file
 
     def run(self, inputs: dict[str, Any]) -> ToolResult:
         try:

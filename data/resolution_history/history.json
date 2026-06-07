@@ -4,47 +4,41 @@
     "category": "vpn",
     "summary": "VPN disconnects every 10-15 minutes on Cisco AnyConnect / macOS",
     "resolution": "Switched VPN protocol from DTLS to TLS in AnyConnect settings; disabled Wi-Fi power saving on macOS.",
-    "resolved_by": "human",
-    "satisfaction": 5
+    "resolved_by": "human"
   },
   {
     "ticket_id": "INC-1078",
     "category": "vpn",
     "summary": "VPN timeout when connecting from home network",
     "resolution": "Flushed DNS cache and reconnected; confirmed split-tunnel config was current.",
-    "resolved_by": "agent",
-    "satisfaction": 4
+    "resolved_by": "agent"
   },
   {
     "ticket_id": "INC-1190",
     "category": "password",
     "summary": "Locked out of Okta after multiple failed password attempts",
     "resolution": "Account auto-unlocks after 30 minutes; guided user through self-service reset at reset.company.com.",
-    "resolved_by": "agent",
-    "satisfaction": 5
+    "resolved_by": "agent"
   },
   {
     "ticket_id": "INC-1205",
     "category": "password",
     "summary": "Okta MFA device lost, cannot complete password reset",
     "resolution": "Escalated to IT to re-enroll MFA device after identity verification.",
-    "resolved_by": "human",
-    "satisfaction": 4
+    "resolved_by": "human"
   },
   {
     "ticket_id": "INC-1312",
     "category": "software_access",
     "summary": "Needs access to Adobe Creative Cloud for a design project",
     "resolution": "Submitted access request via the software catalog; manager approval required for licensed apps.",
-    "resolved_by": "agent",
-    "satisfaction": 5
+    "resolved_by": "agent"
   },
   {
     "ticket_id": "INC-1377",
     "category": "software_access",
     "summary": "Salesforce loading slowly for whole Chicago office",
     "resolution": "Known regional CDN incident; resolved by vendor. Advised affected users to wait and clear cache.",
-    "resolved_by": "human",
-    "satisfaction": 3
+    "resolved_by": "human"
   }
 ]
