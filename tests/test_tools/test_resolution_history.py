@@ -1,7 +1,9 @@
-import agentic_it_support.tools.resolution_history as _hist_mod
+from pathlib import Path
+
 from agentic_it_support.tools.resolution_history import ResolutionHistoryTool
 
-tool = ResolutionHistoryTool()
+_HISTORY_FILE = Path(__file__).resolve().parents[2] / "data" / "resolution_history" / "history.json"
+tool = ResolutionHistoryTool(_HISTORY_FILE)
 
 
 def test_query_required():
@@ -30,8 +32,7 @@ def test_no_match_returns_empty_list_not_error():
     assert result.data["incidents"] == []
 
 
-def test_missing_history_file_returns_error_result(tmp_path, monkeypatch):
-    monkeypatch.setattr(_hist_mod, "_HISTORY_FILE", tmp_path / "nope.json")
-    result = ResolutionHistoryTool().run({"query": "vpn"})
+def test_missing_history_file_returns_error_result(tmp_path):
+    result = ResolutionHistoryTool(tmp_path / "nope.json").run({"query": "vpn"})
     assert result.success is False
     assert result.error is not None

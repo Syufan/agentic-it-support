@@ -96,8 +96,9 @@ def test_defaults():
         reasoning_summary="test",
     )
     assert d.message is None
-    assert d.missing_info == []
     assert d.tool_name is None
+    # missing_info is no longer a proposal field
+    assert "missing_info" not in AgentProposal.model_fields
     assert d.tool_input == {}
     assert d.escalation_reason is None
     # runtime-owned flags must not exist on the proposal anymore
