@@ -1,6 +1,6 @@
 import time
 
-from cli import _SPINNER_CLEAR, Spinner, format_waiting_line
+from agentic_it_support.cli.app import _SPINNER_CLEAR, Spinner, format_waiting_line
 
 
 # ── format_waiting_line (pure function) ───────────────────────────────────────

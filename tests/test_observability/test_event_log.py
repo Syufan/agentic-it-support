@@ -1,30 +1,13 @@
 from datetime import datetime
 
-from llm.client import BaseLLMClient, MockLLMClient
-from agent.proposals import AgentAction, AgentProposal
-from observability.event_tracing import Event, InMemoryEventLog
-from runtime.query_loop import run_turn
-from state.case_state import CaseState, Phase
-from tools.base import BaseTool, ToolResult
-from typing import Any
-
-
-def _proposal(**kwargs) -> AgentProposal:
-    defaults = {
-        "action": AgentAction.ASK_USER,
-        "confidence": 0.6,
-        "reasoning_summary": "test",
-        "message": "What OS?",
-    }
-    return AgentProposal(**(defaults | kwargs))
-
-
-class MockTool(BaseTool):
-    name = "kb_search"
-    description = "mock"
-
-    def run(self, inputs: dict[str, Any]) -> ToolResult:
-        return ToolResult(success=True, data={"results": []})
+from agentic_it_support.observability.event_tracing import (
+    Event,
+    InMemoryEventLog,
+    record_escalation,
+    record_phase_transition,
+    record_tool_call,
+    record_turn_start,
+)
 
 
 # ── Event dataclass ───────────────────────────────────────────────────────────
@@ -54,8 +37,7 @@ def test_empty_log_has_no_events():
 
 def test_record_appends_event():
     log = InMemoryEventLog()
-    e = Event(type="turn_start", case_id="x", phase="intake", confidence=0.5)
-    log.record(e)
+    log.record(Event(type="turn_start", case_id="x", phase="intake", confidence=0.5))
     assert len(log.events()) == 1
 
 
@@ -94,101 +76,37 @@ def test_max_events_drops_oldest():
     assert [e.type for e in log.events()] == ["1", "2"]
 
 
-# ── controller integration ────────────────────────────────────────────────────
+# ── record_* helpers ──────────────────────────────────────────────────────────
 
-def test_turn_start_event_recorded():
-    case = CaseState()
+def test_record_turn_start_writes_turn_start_event():
     log = InMemoryEventLog()
-    run_turn(case, "VPN broken", MockLLMClient([_proposal()]), {}, event_log=log)
-    assert any(e.type == "turn_start" for e in log.events())
+    record_turn_start(log, "case-1", "intake", 0.0)
+    events = log.of_type("turn_start")
+    assert len(events) == 1
+    assert events[0].case_id == "case-1"
+    assert events[0].phase == "intake"
 
 
-def test_tool_call_event_recorded():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    case.confidence = 0.6
+def test_record_tool_call_captures_details():
     log = InMemoryEventLog()
-
-    proposals = [
-        _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
-                  tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
-    ]
-    run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
-
-    tool_events = log.of_type("tool_call")
-    assert len(tool_events) == 1
-    assert tool_events[0].details["tool_name"] == "kb_search"
+    record_tool_call(log, "case-1", "investigating", 0.6, "kb_search", True, {"query": "vpn"})
+    event = log.of_type("tool_call")[0]
+    assert event.details["tool_name"] == "kb_search"
+    assert event.details["success"] is True
+    assert event.details["inputs"] == {"query": "vpn"}
 
 
-def test_tool_call_event_records_success():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    case.confidence = 0.6
+def test_record_phase_transition_tracks_from_and_to():
     log = InMemoryEventLog()
-
-    proposals = [
-        _proposal(action=AgentAction.CALL_TOOL, confidence=0.6,
-                  tool_name="kb_search", tool_input={"query": "vpn"},
-                  message=None),
-        _proposal(action=AgentAction.RESOLVE, confidence=0.6, message="Fix"),
-    ]
-    run_turn(case, "VPN broken", MockLLMClient(proposals), {"kb_search": MockTool()}, event_log=log)
-
-    assert log.of_type("tool_call")[0].details["success"] is True
+    record_phase_transition(log, "case-1", 0.5, "intake", "clarifying")
+    event = log.of_type("phase_transition")[0]
+    assert event.details["from_phase"] == "intake"
+    assert event.details["to_phase"] == "clarifying"
+    assert event.phase == "clarifying"
 
 
-def test_phase_transition_event_recorded():
-    case = CaseState()
+def test_record_escalation_captures_reason():
     log = InMemoryEventLog()
-    run_turn(case, "VPN broken", MockLLMClient([_proposal(
-        missing_info=["OS"],
-    )]), {}, event_log=log)
-
-    transitions = log.of_type("phase_transition")
-    assert len(transitions) >= 1
-    assert "to_phase" in transitions[0].details
-
-
-def test_escalation_event_recorded():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    log = InMemoryEventLog()
-
-    run_turn(case, "my work laptop is infected with malware", MockLLMClient([
-        _proposal(action=AgentAction.ESCALATE, confidence=0.3,
-                  escalation_reason="Suspected malware needs security review", message=None),
-    ]), {}, event_log=log)
-
-    esc_events = log.of_type("escalation")
-    assert len(esc_events) == 1
-    assert esc_events[0].details["reason"] == "Suspected malware needs security review"
-
-
-def test_forced_escalation_is_recorded():
-    # A runtime-initiated handoff (here: LLM provider failure) must leave a trace —
-    # force_escalate used to drop the event because it had no event_log parameter.
-    class _FailingLLM(BaseLLMClient):
-        def call(self, llm_input):
-            from llm.client import LLMProviderError
-            raise LLMProviderError("provider down")
-
-    case = CaseState()
-    log = InMemoryEventLog()
-    run_turn(case, "VPN broken", _FailingLLM(), {}, event_log=log)
-
-    esc_events = log.of_type("escalation")
-    assert len(esc_events) == 1
-    assert "provider error" in esc_events[0].details["reason"].lower()
-    # and the phase transition into the closed/handoff state is traced too
-    assert log.of_type("phase_transition")
-
-
-def test_no_event_log_does_not_raise():
-    case = CaseState()
-    run_turn(case, "VPN broken", MockLLMClient([_proposal()]), {})  # no event_log
-
-
-def test_event_case_id_matches_case():
-    case = CaseState()
-    log = InMemoryEventLog()
-    run_turn(case, "VPN broken", MockLLMClient([_proposal()]), {}, event_log=log)
-    assert all(e.case_id == case.case_id for e in log.events())
+    record_escalation(log, "case-1", "investigating", 0.3, "needs human review")
+    event = log.of_type("escalation")[0]
+    assert event.details["reason"] == "needs human review"

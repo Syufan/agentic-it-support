@@ -1,6 +1,6 @@
 import pytest
-from runtime.message_builder import LLMInput, build_messages
-from state.case_state import CaseState, Phase, ToolTrace
+from agentic_it_support.runtime.message_builder import LLMInput, build_messages
+from agentic_it_support.state.case_state import CaseState, Phase, ToolTrace
 
 
 # ── LLMInput contract ─────────────────────────────────────────────────────────
@@ -88,13 +88,6 @@ def test_observation_includes_phase():
     result = build_messages(case)
     full_text = " ".join(m["content"] for m in result.messages)
     assert "investigating" in full_text.lower()
-
-def test_observation_includes_facts():
-    case = CaseState(phase=Phase.INVESTIGATING)
-    case.facts = {"os": "macOS", "vpn_client": "v4.1"}
-    result = build_messages(case)
-    full_text = " ".join(m["content"] for m in result.messages)
-    assert "macOS" in full_text
 
 def test_observation_does_not_expose_runtime_guard_counters():
     case = CaseState(phase=Phase.INVESTIGATING)

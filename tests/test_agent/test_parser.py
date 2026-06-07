@@ -1,7 +1,7 @@
 import pytest
 
-from agent.parser import ProposalParseError, parse_proposal
-from agent.proposals import AgentAction
+from agentic_it_support.agent.parser import ProposalParseError, parse_proposal
+from agentic_it_support.agent.proposals import AgentAction
 
 
 def test_parse_valid_proposal():

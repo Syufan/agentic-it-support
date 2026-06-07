@@ -1,4 +1,4 @@
-from tools.kb_search import KBSearchTool
+from agentic_it_support.tools.kb_search import KBSearchTool
 
 tool = KBSearchTool()
 

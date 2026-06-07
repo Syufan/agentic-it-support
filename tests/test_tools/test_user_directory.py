@@ -1,5 +1,5 @@
-import tools.user_directory as _dir_mod
-from tools.user_directory import UserDirectoryTool
+import agentic_it_support.tools.user_directory as _dir_mod
+from agentic_it_support.tools.user_directory import UserDirectoryTool
 
 tool = UserDirectoryTool()
 

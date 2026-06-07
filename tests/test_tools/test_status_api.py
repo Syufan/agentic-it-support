@@ -1,5 +1,5 @@
-import tools.status_api as _status_mod
-from tools.status_api import StatusAPITool
+import agentic_it_support.tools.status_api as _status_mod
+from agentic_it_support.tools.status_api import StatusAPITool
 
 tool = StatusAPITool()
 

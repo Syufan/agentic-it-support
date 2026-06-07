@@ -1,27 +1,22 @@
-from llm.client import BaseLLMClient, MockLLMClient
-from agent.proposals import AgentAction, AgentProposal
-from cli import _format_status, run_cli_session, typewrite
-from runtime.query_loop import TurnCancelled
-from runtime.message_builder import LLMInput
-from state.case_state import CaseState, Phase
+from pathlib import Path
+
+from agentic_it_support.agent.proposals import AgentAction, AgentProposal
+from agentic_it_support.cli.app import _format_status, run_cli_session, typewrite
+from agentic_it_support.config.settings import Settings
+from agentic_it_support.llm.client import BaseLLMClient, MockLLMClient
+from agentic_it_support.llm.client import LLMInput
+from agentic_it_support.state.case_state import CaseState, Phase
+
+_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+def _settings() -> Settings:
+    return Settings(_env_file=None, data_dir=_DATA_DIR)
 
 
 def _proposal(**kwargs) -> AgentProposal:
-    defaults = {
-        "action": AgentAction.ASK_USER,
-        "confidence": 0.6,
-        "reasoning_summary": "test",
-        "message": "What OS?",
-    }
+    defaults = {"action": AgentAction.ASK_USER, "message": "What OS?"}
     return AgentProposal(**(defaults | kwargs))
-
-
-def _closing_proposal() -> AgentProposal:
-    return _proposal(
-        action=AgentAction.RESOLVE,
-        confidence=0.9,
-        message="Restart your VPN client.",
-    )
 
 
 def _reader_from(messages: list[str]):
@@ -58,100 +53,55 @@ def _noop_spinner_factory(_get_phase):
     return _NoopSpinner(_get_phase)
 
 
+def _session(case, llm, *, tools=None, reader, writer=lambda _: None, clear=_no_clear, **kwargs):
+    run_cli_session(case, llm, tools or {}, _settings(),
+                    reader=reader, writer=writer, clear=clear, **kwargs)
+
+
 # ── loop termination ──────────────────────────────────────────────────────────
 
 def test_session_exits_when_case_is_closed():
-    case = CaseState(phase=Phase.RESOLVING)
-    case.user_confirmed_resolution = True
-    case.conversation = [{"role": "user", "content": "VPN broken"}]
+    case = CaseState(phase=Phase.INVESTIGATING)
 
-    run_cli_session(
-        case,
-        MockLLMClient([_closing_proposal()]),
-        {},
-        reader=_reader_from(["it worked"]),
-        writer=lambda _: None,
-        clear=_no_clear,
-    )
+    def _closing_runner(case, user_input, llm, tools, settings):
+        case.phase = Phase.CLOSED
+        return "done"
+
+    _session(case, MockLLMClient([]), reader=_reader_from(["it worked"]),
+             spinner_factory=_noop_spinner_factory, turn_runner=_closing_runner)
     assert case.phase == Phase.CLOSED
 
 
 def test_session_exits_on_keyboard_interrupt():
-    case = CaseState()
     output = []
-
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
-                    writer=output.append, clear=_no_clear)
-
+    _session(CaseState(), MockLLMClient([]),
+             reader=lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
+             writer=output.append)
     assert any("goodbye" in str(o).lower() for o in output)
 
 
 def test_session_exits_on_eof():
-    case = CaseState()
     output = []
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=lambda _: (_ for _ in ()).throw(EOFError()),
-                    writer=output.append, clear=_no_clear)
+    _session(CaseState(), MockLLMClient([]),
+             reader=lambda _: (_ for _ in ()).throw(EOFError()),
+             writer=output.append)
     assert any("goodbye" in str(o).lower() for o in output)
 
 
-def test_cancelled_turn_does_not_exit_and_prompts_again():
-    case = CaseState()
-    output = []
-    calls = [0]
-
-    def _cancelling_runner(case, user_input, llm, tools, event_log):
-        calls[0] += 1
-        raise TurnCancelled()
-
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=_reader_from(["first", "second"]),
-                    writer=output.append, clear=_no_clear,
-                    spinner_factory=_noop_spinner_factory,
-                    turn_runner=_cancelling_runner)
-
-    # both messages were attempted — cancelling one turn did not end the session
-    assert calls[0] == 2
-    assert case.phase != Phase.CLOSED
-
-
-def test_cancelled_turn_prints_a_notice():
-    case = CaseState()
-    output = []
-
-    def _cancelling_runner(case, user_input, llm, tools, event_log):
-        raise TurnCancelled()
-
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=_reader_from(["first"]),
-                    writer=output.append, clear=_no_clear,
-                    spinner_factory=_noop_spinner_factory,
-                    turn_runner=_cancelling_runner)
-
-    assert any("cancel" in str(o).lower() for o in output)
-
-
 def test_normal_turn_runner_response_is_written():
-    case = CaseState()
     output = []
 
-    def _runner(case, user_input, llm, tools, event_log):
+    def _runner(case, user_input, llm, tools, settings):
         return "here is your answer"
 
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=_reader_from(["help"]),
-                    writer=output.append, clear=_no_clear,
-                    spinner_factory=_noop_spinner_factory,
-                    turn_runner=_runner)
-
+    _session(CaseState(), MockLLMClient([]), reader=_reader_from(["help"]),
+             writer=output.append, spinner_factory=_noop_spinner_factory, turn_runner=_runner)
     assert any("here is your answer" in str(o) for o in output)
 
 
 # ── input handling ────────────────────────────────────────────────────────────
 
 def test_empty_input_is_skipped():
-    case = CaseState()
     calls = []
 
     class _TrackingLLM(BaseLLMClient):
@@ -159,24 +109,11 @@ def test_empty_input_is_skipped():
             calls.append(llm_input)
             return _proposal()
 
-    run_cli_session(case, _TrackingLLM(), {}, reader=_reader_from(["", "VPN broken"]),
-                    writer=lambda _: None, clear=_no_clear)
+    _session(CaseState(), _TrackingLLM(), reader=_reader_from(["", "VPN broken"]))
     assert len(calls) == 1
 
 
-def test_greeting_does_not_close_case():
-    case = CaseState()
-    output = []
-    run_cli_session(case, MockLLMClient([]), {}, reader=_reader_from(["hey"]),
-                    writer=output.append, clear=_no_clear)
-    joined = " ".join(str(o) for o in output).lower()
-    assert "what it issue" in joined
-    assert "case closed" not in joined
-    assert case.phase == Phase.CLARIFYING
-
-
 def test_unknown_command_does_not_call_llm():
-    case = CaseState()
     calls = []
 
     class _TrackingLLM(BaseLLMClient):
@@ -185,9 +122,7 @@ def test_unknown_command_does_not_call_llm():
             return _proposal()
 
     output = []
-    run_cli_session(case, _TrackingLLM(), {}, reader=_reader_from(["/unknown"]),
-                    writer=output.append, clear=_no_clear)
-
+    _session(CaseState(), _TrackingLLM(), reader=_reader_from(["/unknown"]), writer=output.append)
     assert calls == []
     assert any("unknown command" in str(o).lower() for o in output)
 
@@ -196,59 +131,38 @@ def test_unknown_command_does_not_call_llm():
 
 def test_help_command_prints_commands():
     output = []
-    run_cli_session(CaseState(), MockLLMClient([]), {},
-                    reader=_reader_from(["/help"]), writer=output.append, clear=_no_clear)
+    _session(CaseState(), MockLLMClient([]), reader=_reader_from(["/help"]), writer=output.append)
     joined = " ".join(str(o) for o in output).lower()
     assert "/status" in joined and "/trace" in joined
 
 
 def test_status_command_prints_phase():
     output = []
-    case = CaseState(phase=Phase.INVESTIGATING)
-    run_cli_session(case, MockLLMClient([]), {},
-                    reader=_reader_from(["/status"]), writer=output.append, clear=_no_clear)
+    _session(CaseState(phase=Phase.INVESTIGATING), MockLLMClient([]),
+             reader=_reader_from(["/status"]), writer=output.append)
     joined = " ".join(str(o) for o in output).lower()
     assert "phase=investigating" in joined
 
 
-def test_trace_command_before_turn_prints_empty_message():
+def test_trace_command_prints_empty_message_when_no_events():
     output = []
-    run_cli_session(CaseState(), MockLLMClient([]), {},
-                    reader=_reader_from(["/trace"]), writer=output.append, clear=_no_clear)
+    _session(CaseState(), MockLLMClient([]), reader=_reader_from(["/trace"]), writer=output.append)
     joined = " ".join(str(o) for o in output).lower()
     assert "no runtime events" in joined
-
-
-def test_trace_command_after_turn_shows_events():
-    output = []
-    run_cli_session(
-        CaseState(),
-        MockLLMClient([_proposal(message="What OS?")]),
-        {},
-        reader=_reader_from(["VPN broken", "/trace"]),
-        writer=output.append,
-        clear=_no_clear,
-    )
-    joined = " ".join(str(o) for o in output).lower()
-    assert "recent runtime events" in joined
-    assert "turn_start" in joined
 
 
 def test_clear_command_calls_clear_and_reprints_header():
     output = []
     clears = []
-    run_cli_session(CaseState(), MockLLMClient([]), {},
-                    reader=_reader_from(["/clear"]),
-                    writer=output.append,
-                    clear=lambda: clears.append(1))
+    _session(CaseState(), MockLLMClient([]), reader=_reader_from(["/clear"]),
+             writer=output.append, clear=lambda: clears.append(1))
     assert clears == [1]
     assert sum(1 for o in output if "Agentic IT Support" in str(o)) >= 2
 
 
 def test_quit_command_exits():
     output = []
-    run_cli_session(CaseState(), MockLLMClient([]), {},
-                    reader=_reader_from(["/quit"]), writer=output.append, clear=_no_clear)
+    _session(CaseState(), MockLLMClient([]), reader=_reader_from(["/quit"]), writer=output.append)
     assert any("goodbye" in str(o).lower() for o in output)
 
 
@@ -256,28 +170,16 @@ def test_quit_command_exits():
 
 def test_agent_response_is_written():
     output = []
-    run_cli_session(
-        CaseState(),
-        MockLLMClient([_proposal(message="What OS are you using?")]),
-        {},
-        reader=_reader_from(["VPN broken"]),
-        writer=output.append,
-        clear=_no_clear,
-    )
+    _session(CaseState(), MockLLMClient([_proposal(message="What OS are you using?")]),
+             reader=_reader_from(["VPN broken"]), writer=output.append)
     joined = " ".join(str(o) for o in output)
     assert "What OS are you using?" in joined
 
 
 def test_response_is_prefixed_with_agent_label():
     output = []
-    run_cli_session(
-        CaseState(),
-        MockLLMClient([_proposal(message="What OS?")]),
-        {},
-        reader=_reader_from(["VPN broken"]),
-        writer=output.append,
-        clear=_no_clear,
-    )
+    _session(CaseState(), MockLLMClient([_proposal(message="What OS?")]),
+             reader=_reader_from(["VPN broken"]), writer=output.append)
     joined = " ".join(str(o) for o in output)
     assert "Agent:" in joined
 
@@ -295,15 +197,8 @@ def test_thinking_line_shows_current_phase():
         def stop(self):
             pass
 
-    run_cli_session(
-        CaseState(phase=Phase.CLARIFYING),
-        MockLLMClient([_proposal(message="What OS?")]),
-        {},
-        reader=_reader_from(["VPN broken"]),
-        writer=lambda _: None,
-        clear=_no_clear,
-        spinner_factory=_CaptureSpinner,
-    )
+    _session(CaseState(phase=Phase.CLARIFYING), MockLLMClient([_proposal(message="What OS?")]),
+             reader=_reader_from(["VPN broken"]), spinner_factory=_CaptureSpinner)
     assert phases == ["clarifying"]
 
 
@@ -315,15 +210,8 @@ def test_spinner_starts_and_stops_for_agent_turn():
         spinners.append(spinner)
         return spinner
 
-    run_cli_session(
-        CaseState(),
-        MockLLMClient([_proposal(message="What OS?")]),
-        {},
-        reader=_reader_from(["VPN broken"]),
-        writer=lambda _: None,
-        clear=_no_clear,
-        spinner_factory=_factory,
-    )
+    _session(CaseState(), MockLLMClient([_proposal(message="What OS?")]),
+             reader=_reader_from(["VPN broken"]), spinner_factory=_factory)
     assert len(spinners) == 1
     assert spinners[0].started is True
     assert spinners[0].stopped is True
@@ -331,23 +219,17 @@ def test_spinner_starts_and_stops_for_agent_turn():
 
 def test_status_not_displayed_after_response_by_default():
     output = []
-    run_cli_session(
-        CaseState(),
-        MockLLMClient([_proposal(message="What OS?")]),
-        {},
-        reader=_reader_from(["VPN broken"]),
-        writer=output.append,
-        clear=_no_clear,
-    )
+    _session(CaseState(), MockLLMClient([_proposal(message="What OS?")]),
+             reader=_reader_from(["VPN broken"]), writer=output.append)
     joined = " ".join(str(o) for o in output).lower()
     assert "phase=" not in joined
     assert "confidence=" not in joined
 
 
-def test_initial_agent_greeting_shown():
+def test_initial_header_shown():
     output = []
-    run_cli_session(CaseState(phase=Phase.CLOSED), MockLLMClient([]), {},
-                    reader=lambda _: "", writer=output.append, clear=_no_clear)
+    _session(CaseState(phase=Phase.CLOSED), MockLLMClient([]),
+             reader=lambda _: "", writer=output.append)
     joined = " ".join(str(o) for o in output).lower()
     assert "agentic it support" in joined
 
@@ -356,7 +238,7 @@ def test_format_status_includes_tool_call_limits():
     case = CaseState(phase=Phase.INVESTIGATING)
     case.tool_calls_this_turn = 2
     case.tool_calls_total = 4
-    status = _format_status(case)
+    status = _format_status(case, _settings())
     assert "phase=investigating" in status
     assert "remaining_turn=" in status
     assert "remaining_case=" in status

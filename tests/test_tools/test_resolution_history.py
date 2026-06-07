@@ -1,5 +1,5 @@
-import tools.resolution_history as _hist_mod
-from tools.resolution_history import ResolutionHistoryTool
+import agentic_it_support.tools.resolution_history as _hist_mod
+from agentic_it_support.tools.resolution_history import ResolutionHistoryTool
 
 tool = ResolutionHistoryTool()
 

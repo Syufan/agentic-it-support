@@ -1,14 +1,14 @@
 import pytest
-from llm.client import (
+from agentic_it_support.llm.client import (
     BaseLLMClient,
     LLMConfigurationError,
     LLMProviderError,
     MockLLMClient,
     RealLLMClient,
 )
-from agent.parser import ProposalParseError
-from agent.proposals import AgentAction, AgentProposal
-from runtime.message_builder import LLMInput
+from agentic_it_support.agent.parser import ProposalParseError
+from agentic_it_support.agent.proposals import AgentAction, AgentProposal
+from agentic_it_support.runtime.message_builder import LLMInput
 
 
 def _proposal(**kwargs) -> AgentProposal:

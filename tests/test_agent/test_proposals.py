@@ -1,4 +1,4 @@
-from agent.proposals import AgentAction, AgentProposal
+from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 
 
 # ── valid decisions per action ────────────────────────────────────────────────

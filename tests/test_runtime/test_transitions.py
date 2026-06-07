@@ -1,8 +1,8 @@
 import pytest
 
-from agent.proposals import AgentAction
-from runtime.transitions import TransitionResult, evaluate_transition
-from state.case_state import CaseState, Phase
+from agentic_it_support.agent.proposals import AgentAction
+from agentic_it_support.runtime.transitions import TransitionResult, evaluate_transition
+from agentic_it_support.state.case_state import CaseState, Phase
 
 ASK = AgentAction.ASK_USER
 TOOL = AgentAction.CALL_TOOL
@@ -78,11 +78,14 @@ def test_t10_resolving_to_closed_when_confirmed():
     assert evaluate_transition(resolving(user_confirmed_resolution=True), RESOLVE).next_phase == Phase.CLOSED
 
 
-# ── T11: resolving → investigating retry ─────────────────────────────────────
+# ── T11: resolving → escalating when the user reports the fix failed ──────────
+# A disconfirmed resolution now routes straight to ESCALATING; the resolution-attempt
+# budget is enforced in the executor, not in the transition, so the transition no
+# longer sends a failed fix back to INVESTIGATING.
 
-def test_t11_resolving_to_investigating_retry():
+def test_t11_resolving_to_escalating_when_not_confirmed():
     result = evaluate_transition(resolving(user_confirmed_resolution=False, resolution_attempts=1), RESOLVE)
-    assert result.next_phase == Phase.INVESTIGATING
+    assert result.next_phase == Phase.ESCALATING
 
 
 # ── T13: resolving → escalating ──────────────────────────────────────────────

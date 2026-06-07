@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from agentic_it_support.config.settings import RuntimeLimits, Settings
+from agentic_it_support.config.settings import ConfidenceSettings, RuntimeLimits, Settings
 
 _ENV_VARS = (
     "API_HOST",
@@ -9,7 +9,7 @@ _ENV_VARS = (
     "LLM_API_KEY",
     "LLM_MODEL",
     "LLM_TEMPERATURE",
-    "CONFIDENCE_RETRY_PENALTY",
+    "CONFIDENCE__RETRY_PENALTY",
     "EVENT_LOG_CAPACITY",
 )
 
@@ -23,7 +23,7 @@ def test_defaults(monkeypatch):
     assert s.llm_api_key == ""
     assert s.llm_model == ""
     assert s.llm_temperature is None
-    assert s.confidence_retry_penalty == 0.15
+    assert s.confidence.retry_penalty == 0.15
     assert s.event_log_capacity == 1000
 
 
@@ -32,14 +32,14 @@ def test_env_override(monkeypatch):
     monkeypatch.setenv("API_PORT", "9000")
     monkeypatch.setenv("LLM_MODEL", "custom-model")
     monkeypatch.setenv("LLM_TEMPERATURE", "0.9")
-    monkeypatch.setenv("CONFIDENCE_RETRY_PENALTY", "0.3")
+    monkeypatch.setenv("CONFIDENCE__RETRY_PENALTY", "0.3")
     monkeypatch.setenv("EVENT_LOG_CAPACITY", "200")
     s = Settings(_env_file=None)
     assert s.api_host == "127.0.0.1"
     assert s.api_port == 9000
     assert s.llm_model == "custom-model"
     assert s.llm_temperature == 0.9
-    assert s.confidence_retry_penalty == 0.3
+    assert s.confidence.retry_penalty == 0.3
     assert s.event_log_capacity == 200
 
 
@@ -52,6 +52,20 @@ def test_runtime_limits_defaults():
     assert limits.max_clarification_attempts == 3
     assert limits.max_context_messages == 30
     assert limits.max_corrections == 3
+    assert limits.max_resolution_attempts == 2
+
+
+def test_confidence_settings_defaults():
+    confidence = Settings(_env_file=None).confidence
+    assert confidence.resolve_threshold == 0.35
+    assert confidence.high_threshold == 0.7
+    assert confidence.retry_penalty == 0.15
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1])
+def test_confidence_settings_reject_out_of_range(value):
+    with pytest.raises(ValidationError):
+        ConfidenceSettings(resolve_threshold=value)
 
 
 def test_runtime_limits_env_override(monkeypatch):
