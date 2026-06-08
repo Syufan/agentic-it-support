@@ -95,20 +95,22 @@ def test_escalation_emits_escalation_handoff_and_escalated_outcome(tmp_path):
     run_turn(case, "my work laptop is infected with malware",
              llm=MockLLMClient([_proposal(action=AgentAction.ESCALATE, message=None,
                                           escalation_reason="Suspected malware needs security review")]),
-             tools={}, settings=_settings(handoff_output_dir=tmp_path), event_log=log)
+             tools={}, settings=_settings(handoff_output_dir=tmp_path, trace_output_dir=tmp_path), event_log=log)
 
     types = _types(log, case.case_id)
     assert "escalation" in types
     assert "handoff_written" in types
     assert types[-1] == "turn_end"
     assert log.get_events_for_case(case.case_id)[-1].phase == "closed"  # handoff closes the case
+    # closing the case persists its full trace to {case_id}.json
+    assert (tmp_path / f"{case.case_id}.json").exists()
 
 
-def test_soft_close_traces_phase_transition_to_closed():
+def test_soft_close_traces_phase_transition_to_closed(tmp_path):
     # Clarification budget exhausted -> soft-close records the transition to closed
     # (action="soft_close"), which explains the jump from clarifying to closed.
     log = InMemoryEventLog()
-    settings = _settings()
+    settings = _settings(trace_output_dir=tmp_path)
     case = CaseState(phase=Phase.CLARIFYING)
     case.clarification_attempts = settings.limits.max_clarification_attempts
     run_turn(case, "i don't know", llm=MockLLMClient([_proposal(message="Can you be more specific?")]),
@@ -117,3 +119,5 @@ def test_soft_close_traces_phase_transition_to_closed():
     transitions = [e for e in log.get_events_for_case(case.case_id) if e.event_type == "phase_transition"]
     assert any(e.details["action"] == "soft_close" and e.details["to_phase"] == "closed" for e in transitions)
     assert case.phase == Phase.CLOSED
+    # soft-close is a close, so the trace is persisted too
+    assert (tmp_path / f"{case.case_id}.json").exists()

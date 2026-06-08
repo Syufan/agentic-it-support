@@ -46,7 +46,7 @@ def check_diagnosis(case: CaseState, proposal: AgentProposal, confidence_setting
 _AFFECTED_TARGET = re.compile(
     r"\b("
     r"app|apps|application|applications|software|program|browser|website|site|web|portal|"
-    r"dashboard|email|inbox|mailbox|account|password|"
+    r"dashboard|email|inbox|mailbox|account|password|crm|"
     r"network|wifi|wi-fi|internet|ethernet|vpn|server|gateway|database|db|"
     r"computer|laptop|desktop|machine|pc|mac|macbook|phone|iphone|android|ipad|tablet|"
     r"printer|monitor|screen|display|keyboard|mouse|headset|webcam|camera|device|hardware|drive|disk|"

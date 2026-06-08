@@ -13,13 +13,14 @@ from agentic_it_support.observability.event_tracing import (
     record_llm_parse_error,
     record_turn_end,
     record_turn_start,
+    write_case_trace,
 )
 from agentic_it_support.runtime import limits
 from agentic_it_support.runtime.guards import check_guard
 from agentic_it_support.runtime.limits import CorrectionBudget
 from agentic_it_support.runtime.message_builder import build_messages
 from agentic_it_support.runtime.result import Allow, Escalate, Retry, Terminate, Continue
-from agentic_it_support.state.case_state import CaseState
+from agentic_it_support.state.case_state import CaseState, Phase
 from agentic_it_support.tools.base import BaseTool
 from agentic_it_support.runtime.executor import execute
 from agentic_it_support.runtime.handoff import finalize_handoff
@@ -46,12 +47,15 @@ def run_turn(
     match decision:
         case Terminate(message=message):
             record_turn_end(event_log, case, message)
+            if case.phase == Phase.CLOSED:  # resolve-confirmed or soft-close
+                write_case_trace(event_log, case.case_id, settings.trace_output_dir)
             return message
 
         case Escalate(reason=reason):
             record_escalation(event_log, case, reason)
             reply = finalize_handoff(case, reason, output_dir=settings.handoff_output_dir, event_log=event_log)
             record_turn_end(event_log, case, reply)
+            write_case_trace(event_log, case.case_id, settings.trace_output_dir)  # handoff closes the case
             return reply
 
 def _run_agent_loop(

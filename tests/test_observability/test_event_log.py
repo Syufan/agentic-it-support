@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from agentic_it_support.observability.event_tracing import (
@@ -14,6 +15,7 @@ from agentic_it_support.observability.event_tracing import (
     record_tool_start,
     record_turn_end,
     record_turn_start,
+    write_case_trace,
 )
 from agentic_it_support.state.case_state import CaseState, Phase
 
@@ -194,3 +196,19 @@ def test_record_handoff_written_captures_path():
     log = InMemoryEventLog()
     record_handoff_written(log, _case(phase=Phase.CLOSED), "handoffs/case-1.json")
     assert log.get_events_for_case("case-1")[0].details["path"] == "handoffs/case-1.json"
+
+
+# ── write_case_trace ──────────────────────────────────────────────────────────
+
+def test_write_case_trace_persists_only_that_case(tmp_path):
+    log = InMemoryEventLog()
+    record_turn_start(log, _case(case_id="c1"), "vpn down")
+    record_turn_start(log, _case(case_id="c2"), "other case")
+
+    path = write_case_trace(log, "c1", tmp_path)
+
+    assert path == tmp_path / "c1.json"
+    events = json.loads(path.read_text())
+    assert [e["event_type"] for e in events] == ["turn_start"]
+    assert events[0]["details"]["user_message"] == "vpn down"
+    assert "timestamp" in events[0]

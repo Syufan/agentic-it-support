@@ -1,6 +1,8 @@
+import json
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from agentic_it_support.state.case_state import CaseState
@@ -31,6 +33,25 @@ class InMemoryEventLog:
         if limit is not None:
             return events[-limit:]
         return events
+
+
+def write_case_trace(log: InMemoryEventLog, case_id: str, output_dir: Path) -> Path:
+    """Persist a case's full event trace to {output_dir}/{case_id}.json on close."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{case_id}.json"
+    events = [
+        {
+            "event_type": event.event_type,
+            "phase": event.phase,
+            "confidence": event.confidence,
+            "details": event.details,
+            "timestamp": event.timestamp.isoformat(),
+        }
+        for event in log.get_events_for_case(case_id)
+    ]
+    path.write_text(json.dumps(events, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
+
 
 def _emit(log: InMemoryEventLog, case: CaseState, event_type: str, **details: Any) -> None:
     log.record(Event(
