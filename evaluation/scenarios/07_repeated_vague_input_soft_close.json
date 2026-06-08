@@ -1,0 +1,15 @@
+{
+  "name": "Repeated vague input soft close",
+  "description": "Reliability case. The employee repeatedly gives no affected system or concrete symptom. The agent should keep asking for missing context, avoid inventing a fix, and close gracefully instead of escalating.",
+  "messages": [
+    "It is broken.",
+    "I don't know.",
+    "Just fix it.",
+    "Still no idea."
+  ],
+  "expect": {
+    "resolved": true,
+    "escalated": false,
+    "max_tool_calls": 0
+  }
+}

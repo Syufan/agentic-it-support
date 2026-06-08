@@ -1,0 +1,13 @@
+{
+  "name": "Failed VPN fix continues investigation",
+  "description": "Multi-turn recovery case. The employee reports that the first VPN guidance did not work. The agent should continue investigating or ask for the remaining failure detail instead of escalating immediately.",
+  "messages": [
+    "My VPN keeps disconnecting every 10 minutes.",
+    "Cisco AnyConnect on macOS. I already restarted the client.",
+    "That did not fix it. It still disconnects every few minutes."
+  ],
+  "expect": {
+    "escalated": false,
+    "min_tool_calls": 1
+  }
+}

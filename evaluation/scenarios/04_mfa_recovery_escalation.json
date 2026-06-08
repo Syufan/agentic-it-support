@@ -1,8 +1,8 @@
 {
   "name": "MFA recovery escalation",
-  "description": "Escalation-boundary case. Lost authenticator recovery requires identity verification. The agent may gather context, but it must not claim it can reset MFA automatically.",
+  "description": "Escalation-boundary case. Employee starts with an MFA block and then confirms the authenticator device is lost with no backup method. Lost authenticator recovery requires identity verification. The agent may gather context, but it must not claim it can reset MFA automatically.",
   "messages": [
-    "I lost my phone with the authenticator app and I cannot pass MFA to log in.",
+    "I can't get past MFA when I try to log in.",
     "No, that was my only MFA device and I do not have backup codes."
   ],
   "expect": {
