@@ -4,6 +4,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+"""
+Runtime observability records a bounded event timeline, not a full case dump.
+
+CaseState owns durable conversation, tool traces, and handoff context. Events
+capture process metadata that explains why the agent moved: LLM calls, guard
+retries, tool calls, phase changes, escalations, and handoff writes. Do not log
+full prompts, secrets, full user-directory records, or full tool outputs by
+default.
+"""
+
+
 @dataclass
 class Event:
     type: str
@@ -40,6 +51,22 @@ def record_turn_start(
     log.record(Event(type="turn_start", case_id=case_id, phase=phase, confidence=confidence))
 
 
+def record_turn_end(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+    outcome: str,
+) -> None:
+    log.record(Event(
+        type="turn_end",
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
+        details={"outcome": outcome},
+    ))
+
+
 def record_tool_call(
     log: InMemoryEventLog,
     case_id: str,
@@ -55,6 +82,39 @@ def record_tool_call(
         phase=phase,
         confidence=confidence,
         details={"tool_name": tool_name, "success": success, "inputs": inputs},
+    ))
+
+
+def record_guard_retry(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+    action: str,
+    reason: str,
+) -> None:
+    log.record(Event(
+        type="guard_retry",
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
+        details={"action": action, "reason": reason},
+    ))
+
+
+def record_llm_parse_error(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+    error: str,
+) -> None:
+    log.record(Event(
+        type="llm_parse_error",
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
+        details={"error": error},
     ))
 
 
@@ -77,6 +137,22 @@ def record_llm_call(
             "completion_tokens": completion_tokens,
             "latency_ms": latency_ms,
         },
+    ))
+
+
+def record_runtime_limit_hit(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+    limit: str,
+) -> None:
+    log.record(Event(
+        type="runtime_limit_hit",
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
+        details={"limit": limit},
     ))
 
 
@@ -109,4 +185,20 @@ def record_escalation(
         phase=phase,
         confidence=confidence,
         details={"reason": reason},
+    ))
+
+
+def record_handoff_written(
+    log: InMemoryEventLog,
+    case_id: str,
+    phase: str,
+    confidence: float,
+    path: str,
+) -> None:
+    log.record(Event(
+        type="handoff_written",
+        case_id=case_id,
+        phase=phase,
+        confidence=confidence,
+        details={"path": path},
     ))

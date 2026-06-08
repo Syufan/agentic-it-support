@@ -4,8 +4,13 @@ from agentic_it_support.observability.event_tracing import (
     Event,
     InMemoryEventLog,
     record_escalation,
+    record_guard_retry,
+    record_handoff_written,
+    record_llm_parse_error,
     record_phase_transition,
+    record_runtime_limit_hit,
     record_tool_call,
+    record_turn_end,
     record_turn_start,
 )
 
@@ -87,6 +92,13 @@ def test_record_turn_start_writes_turn_start_event():
     assert events[0].phase == "intake"
 
 
+def test_record_turn_end_captures_outcome():
+    log = InMemoryEventLog()
+    record_turn_end(log, "case-1", "resolving", 0.8, "terminate")
+    event = log.of_type("turn_end")[0]
+    assert event.details["outcome"] == "terminate"
+
+
 def test_record_tool_call_captures_details():
     log = InMemoryEventLog()
     record_tool_call(log, "case-1", "investigating", 0.6, "kb_search", True, {"query": "vpn"})
@@ -94,6 +106,26 @@ def test_record_tool_call_captures_details():
     assert event.details["tool_name"] == "kb_search"
     assert event.details["success"] is True
     assert event.details["inputs"] == {"query": "vpn"}
+
+
+def test_record_guard_retry_captures_action_and_reason():
+    log = InMemoryEventLog()
+    record_guard_retry(log, "case-1", "investigating", 0.2, "resolve", "low confidence")
+    event = log.of_type("guard_retry")[0]
+    assert event.details["action"] == "resolve"
+    assert event.details["reason"] == "low confidence"
+
+
+def test_record_llm_parse_error_captures_error():
+    log = InMemoryEventLog()
+    record_llm_parse_error(log, "case-1", "intake", 0.0, "invalid json")
+    assert log.of_type("llm_parse_error")[0].details["error"] == "invalid json"
+
+
+def test_record_runtime_limit_hit_captures_limit_name():
+    log = InMemoryEventLog()
+    record_runtime_limit_hit(log, "case-1", "investigating", 0.4, "max_inner_iterations")
+    assert log.of_type("runtime_limit_hit")[0].details["limit"] == "max_inner_iterations"
 
 
 def test_record_phase_transition_tracks_from_and_to():
@@ -110,3 +142,10 @@ def test_record_escalation_captures_reason():
     record_escalation(log, "case-1", "investigating", 0.3, "needs human review")
     event = log.of_type("escalation")[0]
     assert event.details["reason"] == "needs human review"
+
+
+def test_record_handoff_written_captures_path():
+    log = InMemoryEventLog()
+    record_handoff_written(log, "case-1", "escalating", 0.3, "output/handoffs/case-1.json")
+    event = log.of_type("handoff_written")[0]
+    assert event.details["path"] == "output/handoffs/case-1.json"
