@@ -32,9 +32,7 @@ class InMemoryEventLog:
             return events[-limit:]
         return events
 
-def _emit(log: InMemoryEventLog | None, case: CaseState, event_type: str, **details: Any) -> None:
-    if log is None:
-        return
+def _emit(log: InMemoryEventLog, case: CaseState, event_type: str, **details: Any) -> None:
     log.record(Event(
         event_type=event_type,
         case_id=case.case_id,
@@ -44,45 +42,45 @@ def _emit(log: InMemoryEventLog | None, case: CaseState, event_type: str, **deta
     ))
 
 
-def record_turn_start(log: InMemoryEventLog | None, case: CaseState, user_message: str) -> None:
+def record_turn_start(log: InMemoryEventLog, case: CaseState, user_message: str) -> None:
     _emit(log, case, "turn_start", user_message=user_message)
 
 
-def record_turn_end(log: InMemoryEventLog | None, case: CaseState, agent_reply: str) -> None:
+def record_turn_end(log: InMemoryEventLog, case: CaseState, agent_reply: str) -> None:
     _emit(log, case, "turn_end", agent_reply=agent_reply)
 
 
-def record_llm_call(log: InMemoryEventLog | None, case: CaseState, proposed_action: str, latency_ms: float) -> None:
+def record_llm_call(log: InMemoryEventLog, case: CaseState, proposed_action: str, latency_ms: float) -> None:
     _emit(log, case, "llm_call", proposed_action=proposed_action, latency_ms=latency_ms)
 
 
-def record_llm_parse_error(log: InMemoryEventLog | None, case: CaseState, error: str) -> None:
+def record_llm_parse_error(log: InMemoryEventLog, case: CaseState, error: str) -> None:
     _emit(log, case, "llm_parse_error", error=error)
 
 
-def record_tool_start(log: InMemoryEventLog | None, case: CaseState, tool_name: str, inputs: dict[str, Any]) -> None:
+def record_tool_start(log: InMemoryEventLog, case: CaseState, tool_name: str, inputs: dict[str, Any]) -> None:
     _emit(log, case, "tool_start", tool_name=tool_name, inputs=inputs)
 
 
-def record_tool_end(log: InMemoryEventLog | None, case: CaseState, tool_name: str, success: bool, output: Any, conf_before: float) -> None:
+def record_tool_end(log: InMemoryEventLog, case: CaseState, tool_name: str, success: bool, output: Any, conf_before: float) -> None:
     _emit(log, case, "tool_end", tool_name=tool_name, success=success, output=output, conf_before=conf_before)
 
 
-def record_guard(log: InMemoryEventLog | None, case: CaseState, action: str, verdict: str, reason: str | None = None) -> None:
+def record_guard(log: InMemoryEventLog, case: CaseState, action: str, verdict: str, reason: str | None = None) -> None:
     _emit(log, case, "guard", agent_proposal=action, verdict=verdict, reason=reason)
 
 
-def record_phase_transition(log: InMemoryEventLog | None, case: CaseState, from_phase: str, to_phase: str, action: str) -> None:
+def record_phase_transition(log: InMemoryEventLog, case: CaseState, from_phase: str, to_phase: str, action: str) -> None:
     _emit(log, case, "phase_transition", from_phase=from_phase, to_phase=to_phase, action=action)
 
 
-def record_limit_hit(log: InMemoryEventLog | None, case: CaseState, limit: str) -> None:
+def record_limit_hit(log: InMemoryEventLog, case: CaseState, limit: str) -> None:
     _emit(log, case, "limit_hit", limit=limit)
 
 
-def record_escalation(log: InMemoryEventLog | None, case: CaseState, reason: str) -> None:
+def record_escalation(log: InMemoryEventLog, case: CaseState, reason: str) -> None:
     _emit(log, case, "escalation", reason=reason)
 
 
-def record_handoff_written(log: InMemoryEventLog | None, case: CaseState, path: str) -> None:
+def record_handoff_written(log: InMemoryEventLog, case: CaseState, path: str) -> None:
     _emit(log, case, "handoff_written", path=path)

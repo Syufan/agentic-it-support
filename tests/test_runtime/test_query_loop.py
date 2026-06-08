@@ -6,6 +6,7 @@ from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 from agentic_it_support.config.settings import Settings
 from agentic_it_support.llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
 from agentic_it_support.llm.client import LLMInput
+from agentic_it_support.observability.event_tracing import InMemoryEventLog
 from agentic_it_support.runtime.turn_runner import run_turn
 from agentic_it_support.state.case_state import CaseState, Phase, ToolTrace
 from agentic_it_support.tools.base import BaseTool, ToolResult
@@ -19,7 +20,7 @@ def _settings() -> Settings:
 
 
 def _run(case, message, llm, tools=None):
-    return run_turn(case, message, llm=llm, tools=tools or {}, settings=_settings())
+    return run_turn(case, message, llm=llm, tools=tools or {}, settings=_settings(), event_log=InMemoryEventLog())
 
 
 class MockTool(BaseTool):

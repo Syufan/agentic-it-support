@@ -3,11 +3,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from agentic_it_support.api.schemas import CaseView, ChatRequest, ChatResponse
+from agentic_it_support.api.schemas import ChatRequest, ChatResponse, TraceEventView
 from agentic_it_support.state.case_state import Phase
 
 
-def build_router(*, llm: Any, tools: dict[str, Any], store: Any, turn_runner: Callable[..., str]) -> APIRouter:
+def build_router(*, llm: Any, tools: dict[str, Any], store: Any, turn_runner: Callable[..., str], event_log: Any) -> APIRouter:
     """Build API routes with injected app."""
     router = APIRouter()
 
@@ -22,10 +22,10 @@ def build_router(*, llm: Any, tools: dict[str, Any], store: Any, turn_runner: Ca
         message = turn_runner(case, request.message)
         return _to_chat_response(case, message)
 
-    # Reserved for future dashboard.
-    @router.get("/case/{case_id}", response_model=CaseView)
-    def get_case(case_id: str) -> CaseView:
-        return _to_case_view(_require_case(store, case_id))
+    # Read back the recorded runtime trace for a case (empty if none recorded).
+    @router.get("/case/{case_id}/trace", response_model=list[TraceEventView])
+    def get_trace(case_id: str, limit: int | None = None) -> list[TraceEventView]:
+        return [_to_trace_view(event) for event in event_log.get_events_for_case(case_id, limit=limit)]
 
     return router
 
@@ -56,13 +56,12 @@ def _to_chat_response(case: Any, message: str) -> ChatResponse:
     )
 
 
-def _to_case_view(case: Any) -> CaseView:
-    """Reserved for future dashboard, map case state to case view."""
-    return CaseView(
-        case_id=case.case_id,
-        phase=case.phase.value,
-        is_closed=case.phase == Phase.CLOSED,
-        confidence=case.confidence,
-        tool_calls_total=case.tool_calls_total,
-        escalation_context=case.escalation_context or None,
+def _to_trace_view(event: Any) -> TraceEventView:
+    """Map a runtime Event to its API view."""
+    return TraceEventView(
+        event_type=event.event_type,
+        phase=event.phase,
+        confidence=event.confidence,
+        details=event.details,
+        timestamp=event.timestamp,
     )

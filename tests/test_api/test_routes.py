@@ -2,6 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentic_it_support.api.server import ITSupportWebServer
+from agentic_it_support.observability.event_tracing import InMemoryEventLog, record_turn_start
+from agentic_it_support.state.case_state import CaseState
 from agentic_it_support.state.session import SessionStore
 
 
@@ -21,6 +23,7 @@ def client():
         tools={},
         store=SessionStore(),
         turn_runner=_runner(),
+        event_log=InMemoryEventLog(),
     ).get_app()
     return TestClient(app)
 
@@ -36,8 +39,37 @@ def _client(store: SessionStore, responses: list[str] | None = None) -> TestClie
         tools={},
         store=store,
         turn_runner=_runner(responses),
+        event_log=InMemoryEventLog(),
     ).get_app()
     return TestClient(app)
+
+
+def _client_with_log(event_log: InMemoryEventLog) -> TestClient:
+    app = ITSupportWebServer(
+        llm=None,
+        tools={},
+        store=SessionStore(),
+        turn_runner=_runner(),
+        event_log=event_log,
+    ).get_app()
+    return TestClient(app)
+
+
+def test_trace_returns_recorded_events_for_case():
+    log = InMemoryEventLog()
+    record_turn_start(log, CaseState(case_id="trace-1"), "vpn down")
+    resp = _client_with_log(log).get("/case/trace-1/trace")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["event_type"] == "turn_start"
+    assert body[0]["details"]["user_message"] == "vpn down"
+
+
+def test_trace_is_empty_for_unknown_case():
+    resp = _client_with_log(InMemoryEventLog()).get("/case/nope/trace")
+    assert resp.status_code == 200
+    assert resp.json() == []
 
 
 def test_health_returns_ok(client):
@@ -109,6 +141,4 @@ def test_chat_unknown_case_id_returns_404(persistent_store):
     assert response.status_code == 404
 
 
-def test_get_case_returns_404_for_unknown_id(client):
-    assert client.get("/case/nonexistent-id").status_code == 404
 

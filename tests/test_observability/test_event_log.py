@@ -101,11 +101,6 @@ def test_emit_pulls_core_fields_from_case():
     assert (e.case_id, e.phase, e.confidence) == ("case-1", "clarifying", 0.35)
 
 
-def test_none_log_is_a_noop():
-    # Probe call sites stay unconditional; a missing log records nothing.
-    record_turn_start(None, _case(), "hi")  # must not raise
-
-
 def test_record_turn_start_captures_user_message():
     log = InMemoryEventLog()
     record_turn_start(log, _case(), "my vpn is down")

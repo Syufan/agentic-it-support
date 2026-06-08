@@ -23,7 +23,7 @@ def _build_webserver():
     store = SessionStore()
     event_log = InMemoryEventLog(max_events=settings.event_log_capacity)
     turn_runner = partial(run_turn, llm=llm, tools=tools, settings=settings, event_log=event_log)
-    return ITSupportWebServer(llm=llm, tools=tools, store=store, turn_runner=turn_runner).get_app(), settings
+    return ITSupportWebServer(llm=llm, tools=tools, store=store, turn_runner=turn_runner, event_log=event_log).get_app(), settings
 
 
 app, settings = _build_webserver()

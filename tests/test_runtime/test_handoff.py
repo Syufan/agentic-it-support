@@ -1,5 +1,6 @@
 import json
 
+from agentic_it_support.observability.event_tracing import InMemoryEventLog
 from agentic_it_support.runtime.handoff import finalize_handoff
 from agentic_it_support.state.case_state import CaseState, ToolTrace
 
@@ -22,6 +23,7 @@ def test_finalize_handoff_writes_local_json_payload(monkeypatch, tmp_path):
         case,
         "MFA reset requires identity verification",
         output_dir=output_dir,
+        event_log=InMemoryEventLog(),
     )
 
     path = output_dir / f"{case.case_id}.json"

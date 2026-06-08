@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, field_validator
@@ -22,11 +23,10 @@ class ChatResponse(BaseModel):
     is_closed: bool
 
 
-class CaseView(BaseModel):
-    """Reserved for future dashboard."""
-    case_id: str
+class TraceEventView(BaseModel):
+    """One runtime trace event for a case, read back via /case/{id}/trace."""
+    event_type: str
     phase: str
-    is_closed: bool
     confidence: float
-    tool_calls_total: int
-    escalation_context: dict[str, Any] | None
+    details: dict[str, Any]
+    timestamp: datetime

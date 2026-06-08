@@ -117,10 +117,3 @@ def test_soft_close_traces_phase_transition_to_closed():
     transitions = [e for e in log.get_events_for_case(case.case_id) if e.event_type == "phase_transition"]
     assert any(e.details["action"] == "soft_close" and e.details["to_phase"] == "closed" for e in transitions)
     assert case.phase == Phase.CLOSED
-
-
-def test_no_event_log_is_safe():
-    # The default event_log=None must record nothing and never raise.
-    case = CaseState()
-    run_turn(case, "VPN broken", llm=MockLLMClient([_proposal(message="?")]),
-             tools={}, settings=_settings())

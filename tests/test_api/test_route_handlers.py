@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from agentic_it_support.api.server import ITSupportWebServer
+from agentic_it_support.observability.event_tracing import InMemoryEventLog
 from agentic_it_support.state.session import SessionStore
 
 
@@ -17,6 +18,7 @@ def _client(store: SessionStore | None = None, runner=None) -> TestClient:
         tools={},
         store=store or SessionStore(),
         turn_runner=runner or _runner(),
+        event_log=InMemoryEventLog(),
     ).get_app()
     return TestClient(app)
 
@@ -45,11 +47,5 @@ def test_chat_returns_404_for_unknown_case_id():
         "/chat",
         json={"case_id": "missing", "message": "VPN broken"},
     )
-
-    assert response.status_code == 404
-
-
-def test_case_view_returns_404_for_unknown_case_id():
-    response = _client().get("/case/missing")
 
     assert response.status_code == 404

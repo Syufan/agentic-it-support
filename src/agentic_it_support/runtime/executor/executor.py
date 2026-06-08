@@ -23,7 +23,7 @@ def execute(
     *,
     runtime_limits: RuntimeLimits,
     confidence_settings: ConfidenceSettings,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> Continue | Terminate | Escalate:
     _sync_resolution_confirmation(case, proposal, confidence_settings)
 
@@ -56,7 +56,7 @@ def _execute_tool_action(
     proposal: AgentProposal,
     tools: dict[str, BaseTool],
     confidence_settings: ConfidenceSettings,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> Continue:
     # Tool use means the case has enough detail to investigate
     case.clarification_attempts = 0
@@ -95,7 +95,7 @@ def _execute_tool(case: CaseState, proposal: AgentProposal, tools: dict[str, Bas
     case.tool_calls_this_turn += 1
     case.tool_calls_total += 1
 
-def _soft_close(case: CaseState, event_log: InMemoryEventLog | None = None) -> Terminate:
+def _soft_close(case: CaseState, event_log: InMemoryEventLog) -> Terminate:
     message = (
         "I don't have enough detail to identify the problem (which app/service/device, "
         "and the specific symptom), so I'm closing this for now. Start a new request with "
@@ -107,7 +107,7 @@ def _soft_close(case: CaseState, event_log: InMemoryEventLog | None = None) -> T
     case.add_assistant_message(message)
     return Terminate(message)
 
-def _apply_transition(case: CaseState, action: AgentAction, event_log: InMemoryEventLog | None = None) -> None:
+def _apply_transition(case: CaseState, action: AgentAction, event_log: InMemoryEventLog) -> None:
     from_phase = case.phase.value
     result = evaluate_transition(case, action)
     case.phase = result.next_phase
@@ -117,7 +117,7 @@ def _execute_ask_user(
     case: CaseState,
     proposal: AgentProposal,
     runtime_limits: RuntimeLimits,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> Terminate:
     if proposal.message is None:
         raise ValueError("ASK_USER proposal missing message after validation")
@@ -135,7 +135,7 @@ def _execute_resolution(
     case: CaseState,
     proposal: AgentProposal,
     runtime_limits: RuntimeLimits,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> Terminate | Escalate:
     message = proposal.message
     if message is None:

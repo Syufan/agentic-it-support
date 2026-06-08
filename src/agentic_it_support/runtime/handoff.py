@@ -20,7 +20,7 @@ def finalize_handoff(
     reason: str,
     *,
     output_dir: Path,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> str:
     """Finaliza human handoff for any runtime escalation decision."""
     case.escalation_context = _build_handoff_context(

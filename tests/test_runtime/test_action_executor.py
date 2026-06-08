@@ -2,6 +2,7 @@ from typing import Any
 
 from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 from agentic_it_support.config.settings import ConfidenceSettings, RuntimeLimits
+from agentic_it_support.observability.event_tracing import InMemoryEventLog
 from agentic_it_support.runtime.executor.executor import execute
 from agentic_it_support.runtime.result import Continue, Escalate, Terminate
 from agentic_it_support.state.case_state import CaseState, Phase
@@ -28,7 +29,7 @@ def _proposal(**kwargs) -> AgentProposal:
 
 
 def _execute(case, proposal, tools=None):
-    return execute(case, proposal, tools or {}, runtime_limits=_LIMITS, confidence_settings=_CONFIDENCE)
+    return execute(case, proposal, tools or {}, runtime_limits=_LIMITS, confidence_settings=_CONFIDENCE, event_log=InMemoryEventLog())
 
 
 # ── CALL_TOOL ─────────────────────────────────────────────────────────────────
