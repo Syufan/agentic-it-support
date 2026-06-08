@@ -121,7 +121,7 @@ uv sync
 ### 3. Run the FastAPI server
 
 ```bash
-uv run python main.py
+uv run agentic-it-api
 ```
 
 The server starts at:
@@ -163,7 +163,7 @@ curl http://localhost:8000/case/<case_id> | python3 -m json.tool
 ### 5. Run the local CLI
 
 ```bash
-uv run python cli.py
+uv run agentic-it-cli
 ```
 
 Useful CLI commands:

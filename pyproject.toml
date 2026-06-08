@@ -12,6 +12,10 @@ dependencies = [
     "uvicorn>=0.48.0",
 ]
 
+[project.scripts]
+agentic-it-api = "agentic_it_support.main:main"
+agentic-it-cli = "agentic_it_support.cli.app:main"
+
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
