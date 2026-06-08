@@ -29,7 +29,7 @@ def finalize_handoff(
         internal_reason=reason
     )
     path = _write_handoff_json(case.escalation_context, output_dir)
-    case.phase = Phase.ESCALATING
+    case.phase = Phase.CLOSED
     case.handoff_completed = True
     record_handoff_written(event_log, case, str(path))
 

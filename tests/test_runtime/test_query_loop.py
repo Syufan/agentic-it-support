@@ -151,7 +151,8 @@ def test_escalate_sets_handoff_completed():
                   escalation_reason="Suspected malware needs security review"),
     ]))
     assert case.handoff_completed is True
-    assert case.phase == Phase.ESCALATING
+    # handoff is synchronous, so the case lands terminal (CLOSED), not stuck escalating
+    assert case.phase == Phase.CLOSED
 
 
 def test_escalate_response_is_generic_handoff_message():

@@ -192,5 +192,5 @@ def test_record_escalation_captures_reason():
 
 def test_record_handoff_written_captures_path():
     log = InMemoryEventLog()
-    record_handoff_written(log, _case(phase=Phase.ESCALATING), "handoffs/case-1.json")
+    record_handoff_written(log, _case(phase=Phase.CLOSED), "handoffs/case-1.json")
     assert log.get_events_for_case("case-1")[0].details["path"] == "handoffs/case-1.json"

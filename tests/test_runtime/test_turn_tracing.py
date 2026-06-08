@@ -101,7 +101,7 @@ def test_escalation_emits_escalation_handoff_and_escalated_outcome(tmp_path):
     assert "escalation" in types
     assert "handoff_written" in types
     assert types[-1] == "turn_end"
-    assert log.get_events_for_case(case.case_id)[-1].phase == "escalating"  # phase conveys the outcome
+    assert log.get_events_for_case(case.case_id)[-1].phase == "closed"  # handoff closes the case
 
 
 def test_soft_close_traces_phase_transition_to_closed():
