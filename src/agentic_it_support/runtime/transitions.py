@@ -27,32 +27,6 @@ def evaluate_transition(case: CaseState, action: AgentAction) -> TransitionResul
             return _from_escalating(case)
         case Phase.CLOSED:
             return _result(Phase.CLOSED)
-'''
-    INTAKE
-        ASK_USER → CLARIFYING (T1)
-        其他：INVESTIGATING
-
-    CLARIFYING
-        ASK_USER → CLARIFYING
-        其他：其他：INVESTIGATING (T3)
-
-    INVESTIGATING
-        RESOLVE → RESOLVING (T4)
-        ASK_USER  → CLARIFYING (T7)
-        CALL_TOOL → INVESTIGATING (T6)
-    
-    RESOLVING
-        只看 user_confirmed_resolution
-        true -> Closed
-        False -> INVESTIGATING
-        False + 超过上限 -> Escalation
-        None -> 等待
-    
-    ESCALATING
-        只看 handoff_completed
-        True  → CLOSED (T14)
-        False → ESCALATING     # 还在处理移交，等着
-'''
 
 
 def _from_intake(action: AgentAction) -> TransitionResult:

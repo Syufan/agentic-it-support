@@ -32,7 +32,7 @@ def run_turn(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     settings: Settings,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> str:
     # 1. Setup
     case.add_user_message(user_message)
@@ -43,9 +43,6 @@ def run_turn(
     decision = _run_agent_loop(case, llm=llm, tools=tools, settings=settings, event_log=event_log)
 
     # 3. Exit -> Message or File
-    # The terminal phase on the turn_end event is the outcome (clarifying=asked,
-    # resolving=proposed, closed=soft-closed, escalating=escalated); the renderer
-    # maps it to a friendly label.
     match decision:
         case Terminate(message=message):
             record_turn_end(event_log, case, message)
@@ -63,7 +60,7 @@ def _run_agent_loop(
     llm: BaseLLMClient,
     tools: dict[str, BaseTool],
     settings: Settings,
-    event_log: InMemoryEventLog | None = None,
+    event_log: InMemoryEventLog,
 ) -> Terminate | Escalate:
     correction: str | None = None
     correction_budget = CorrectionBudget(max_corrections=settings.limits.max_corrections)
