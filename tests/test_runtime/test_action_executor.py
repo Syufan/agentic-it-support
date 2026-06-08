@@ -99,6 +99,33 @@ def test_ask_user_appends_assistant_message_and_transitions():
     assert case.phase == Phase.CLARIFYING
 
 
+def test_ask_user_below_limit_asks_and_increments():
+    # One below the cap: ask normally, bump the counter, stay in clarifying.
+    case = CaseState(phase=Phase.CLARIFYING,
+                     clarification_attempts=_LIMITS.max_clarification_attempts - 1)
+    outcome = _execute(case, _proposal(action=AgentAction.ASK_USER, message="What OS?"))
+    assert isinstance(outcome, Terminate)
+    assert outcome.message == "What OS?"
+    assert case.phase == Phase.CLARIFYING
+    assert case.clarification_attempts == _LIMITS.max_clarification_attempts
+    assert case.escalation_context == {}
+
+
+def test_ask_user_soft_closes_at_clarification_limit():
+    # At the cap, another ask_user soft-closes instead of asking again: the case lands
+    # CLOSED with a closing message, and it is NOT an escalation.
+    case = CaseState(phase=Phase.CLARIFYING,
+                     clarification_attempts=_LIMITS.max_clarification_attempts)
+    outcome = _execute(case, _proposal(action=AgentAction.ASK_USER, message="What OS?"))
+    assert isinstance(outcome, Terminate)
+    assert case.phase == Phase.CLOSED
+    # soft-close delivers the closing copy, not the agent's clarifying question
+    assert outcome.message != "What OS?"
+    assert case.conversation[-1] == {"role": "assistant", "content": outcome.message}
+    # soft-close is a non-case abort, not a human handoff
+    assert case.escalation_context == {}
+
+
 # ── RESOLVE ───────────────────────────────────────────────────────────────────
 
 def test_resolve_terminates_and_enters_resolving():

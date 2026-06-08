@@ -1,6 +1,7 @@
 
 from agentic_it_support.config.settings import ConfidenceSettings, RuntimeLimits
-from agentic_it_support.state.case_state import CaseState, ToolTrace
+from agentic_it_support.runtime.limits import clarification_limit_reached
+from agentic_it_support.state.case_state import CaseState, Phase, ToolTrace
 from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 from agentic_it_support.tools.base import BaseTool
 from agentic_it_support.runtime.executor.confidence import compute_confidence
@@ -16,7 +17,7 @@ def execute(case: CaseState, proposal: AgentProposal, tools: dict[str, BaseTool]
             return _execute_tool_action(case, proposal, tools, confidence_settings)
 
         case AgentAction.ASK_USER:
-            return _execute_ask_user(case, proposal)
+            return _execute_ask_user(case, proposal, runtime_limits)
 
         case AgentAction.RESOLVE:
             return _execute_resolution(case, proposal, runtime_limits)
@@ -68,13 +69,27 @@ def _execute_tool(case: CaseState, proposal: AgentProposal, tools: dict[str, Bas
     case.tool_calls_this_turn += 1
     case.tool_calls_total += 1
 
+def _soft_close(case: CaseState) -> Terminate:
+    message = (
+        "I don't have enough detail to identify the problem (which app/service/device, "
+        "and the specific symptom), so I'm closing this for now. Start a new request with "
+        "those details anytime, or contact the IT desk directly."
+    )
+    case.phase = Phase.CLOSED
+    case.add_assistant_message(message)
+    return Terminate(message)
+
 def _apply_transition(case: CaseState, action: AgentAction) -> None:
     result = evaluate_transition(case, action)
     case.phase = result.next_phase
 
-def _execute_ask_user(case: CaseState, proposal: AgentProposal) -> Terminate:
+def _execute_ask_user(case: CaseState, proposal: AgentProposal, runtime_limits: RuntimeLimits) -> Terminate:
     if proposal.message is None:
         raise ValueError("ASK_USER proposal missing message after validation")
+
+    if clarification_limit_reached(case, runtime_limits):
+        return _soft_close(case)
+    case.clarification_attempts += 1
 
     _apply_transition(case, AgentAction.ASK_USER)
     case.user_confirmed_resolution = None

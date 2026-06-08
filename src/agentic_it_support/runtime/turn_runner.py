@@ -23,7 +23,7 @@ def run_turn(case: CaseState, user_message: str, *, llm: BaseLLMClient, tools: d
     # 2. Main loop -> Terminate, Escalate
     decision = _run_agent_loop(case, llm=llm, tools=tools, settings=settings)
 
-    # 3. Exit
+    # 3. Exit -> Message or File
     match decision:
         case Terminate(message=message):
             return message
