@@ -15,7 +15,7 @@ from agentic_it_support.agent.parser import parse_proposal
 from agentic_it_support.config.settings import Settings
 from evaluation import EvaluationResult, evaluate
 from agentic_it_support.llm.client import BaseLLMClient, RealLLMClient
-from agentic_it_support.runtime.query_loop import run_turn
+from agentic_it_support.runtime.turn_runner import run_turn
 from agentic_it_support.state.case_state import CaseState
 from agentic_it_support.tools import build_tools
 
@@ -38,7 +38,7 @@ def run_scenario(path: Path, llm: BaseLLMClient, settings: Settings) -> Scenario
 
     try:
         for message in scenario["messages"]:
-            responses.append(run_turn(case, message, llm, tools, settings=settings))
+            responses.append(run_turn(case, message, llm=llm, tools=tools, settings=settings))
     except Exception:
         # Keep per-scenario isolation, but preserve the full traceback so a real
         # bug surfaces its stack instead of being flattened to a one-line message.
