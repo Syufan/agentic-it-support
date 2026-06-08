@@ -120,15 +120,14 @@ uv sync
 
 ### 3. Run the FastAPI server
 
+Activate the environment, then run the server directly:
+
 ```bash
-uv run agentic-it-api
+source .venv/bin/activate
+agentic-it-api
 ```
 
-The server starts at:
-
-```text
-http://localhost:8000
-```
+The server starts at `http://localhost:8000`. Stop it with `Ctrl+C`.
 
 Check that it is alive:
 
@@ -162,8 +161,10 @@ curl http://localhost:8000/case/<case_id> | python3 -m json.tool
 
 ### 5. Run the local CLI
 
+With the environment activated (step 3):
+
 ```bash
-uv run agentic-it-cli
+agentic-it-cli
 ```
 
 Useful CLI commands:
@@ -177,16 +178,16 @@ Useful CLI commands:
 
 ### 6. Run tests and evaluation
 
-Run the test suite:
+Run the test suite (environment activated, step 3):
 
 ```bash
-uv run pytest
+pytest
 ```
 
 Run the scenario evaluator:
 
 ```bash
-uv run python -m evaluation.runner
+python -m evaluation.runner
 ```
 
 ## Evaluation
