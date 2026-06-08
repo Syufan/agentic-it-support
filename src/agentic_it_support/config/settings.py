@@ -22,6 +22,10 @@ class ConfidenceSettings(BaseModel):
     high_threshold: float = Field(0.7, ge=0.0, le=1.0)
     retry_penalty: float = Field(0.15, ge=0.0, le=1.0)
 
+class ContextSettings(BaseModel):
+    max_tool_traces: int = Field(3, gt=0, le=20)
+    tool_output_preview_chars: int = Field(1000, gt=100, le=10000)
+
 class Settings(BaseSettings):
     # API server settings
     api_host: str = "0.0.0.0"
@@ -37,6 +41,9 @@ class Settings(BaseSettings):
 
     # Confidence scoring thresholds and penalties
     confidence: ConfidenceSettings = ConfidenceSettings()
+
+    # LLM message context projection settings
+    message_context: ContextSettings = ContextSettings()
 
     # Repository-backed mock data
     data_dir: Path = DEFAULT_DATA_DIR

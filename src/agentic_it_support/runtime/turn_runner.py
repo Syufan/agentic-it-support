@@ -43,7 +43,7 @@ def _run_agent_loop(case: CaseState, *,  llm: BaseLLMClient, tools: dict[str, Ba
 
         # Gate 2: request and parse the next agent proposal
         try:
-            proposal = _call_agent(case, correction=correction, llm=llm)
+            proposal = _call_agent(case, correction=correction, llm=llm, settings=settings)
         
         except ProposalParseError as exc:
             # Contract failure: retry with correction while budget remains
@@ -88,6 +88,6 @@ def _run_agent_loop(case: CaseState, *,  llm: BaseLLMClient, tools: dict[str, Ba
     return Escalate("maximum investigation steps reached before resolution")
 
 
-def _call_agent(case: CaseState, correction: str | None, llm: BaseLLMClient) -> AgentProposal:
-    llm_input = build_messages(case, correction=correction)
+def _call_agent(case: CaseState, correction: str | None, llm: BaseLLMClient, settings: Settings) -> AgentProposal:
+    llm_input = build_messages(case, correction=correction, context_settings=settings.message_context)
     return llm.call(llm_input)
