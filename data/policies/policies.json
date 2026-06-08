@@ -38,9 +38,14 @@
       "action": "unlock_account",
       "description": "Unlock a locked account before the automatic timeout",
       "authorization": "human",
-      "notes": "Requires identity verification by an IT specialist.",
+      "notes": "Requires identity verification by an IT specialist. The agent may guide self-service unlock/reset, but must not claim to unlock the account itself.",
       "match_patterns": [
-        ["unlock", "account"]
+        ["i can unlock"],
+        ["i will unlock"],
+        ["i'll unlock"],
+        ["i unlocked"],
+        ["i have unlocked"],
+        ["i've unlocked"]
       ]
     },
     {
