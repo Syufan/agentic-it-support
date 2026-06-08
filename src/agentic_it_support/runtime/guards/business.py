@@ -49,7 +49,6 @@ def check_business(case: CaseState, proposal: AgentProposal, policy_file: Path) 
 
 def _load_policy_rules(path: Path) -> list[PolicyRule]:
     """Load policy rules from the JSON policy source."""
-    # TODO: validate the policy JSON shape with Pydantic
     data = json.loads(path.read_text(encoding="utf-8"))
     return [
         PolicyRule(

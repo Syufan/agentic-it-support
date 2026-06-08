@@ -243,6 +243,8 @@ I did not implement the full grounding state in this prototype because it would 
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
 
+I would also validate the policy data shape at load time. Today `_load_policy_rules` reads the JSON and indexes keys directly, so a malformed policy file fails late at runtime; I would parse it through a Pydantic model so a bad shape is rejected with a clear error when the rules are loaded.
+
 I would also improve context projection. The runtime keeps full case memory, but the model should receive only bounded, decision-relevant context such as phase, confidence, retry attempts, and recent tool evidence.
 
 
