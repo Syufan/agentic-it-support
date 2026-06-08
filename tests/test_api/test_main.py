@@ -24,11 +24,12 @@ def test_main_app_health_check(monkeypatch):
 def test_main_wires_real_turn_runner_into_chat(monkeypatch):
     captured = {}
 
-    def fake_run_turn(case, user_message, *, llm, tools, settings):
+    def fake_run_turn(case, user_message, *, llm, tools, settings, event_log):
         captured["user_message"] = user_message
         captured["llm"] = llm
         captured["tools"] = tools
         captured["settings"] = settings
+        captured["event_log"] = event_log
         return "handled by runtime"
 
     import agentic_it_support.runtime.turn_runner as turn_runner_module
@@ -42,7 +43,8 @@ def test_main_wires_real_turn_runner_into_chat(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["message"] == "handled by runtime"
-    # main must inject llm, tools and settings into run_turn via partial
+    # main must inject llm, tools, settings and the event log into run_turn via partial
     assert captured["user_message"] == "VPN is broken"
     assert captured["llm"] is not None
     assert captured["settings"] is not None
+    assert captured["event_log"] is not None

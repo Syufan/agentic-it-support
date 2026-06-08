@@ -104,8 +104,12 @@ def run_cli_session(
 ) -> None:
     del get_term_size, cursor_up  # compatibility hooks for older tests.
 
-    run_one_turn = turn_runner or _interruptible_run_turn
-    event_log = InMemoryEventLog()
+    event_log = InMemoryEventLog(max_events=settings.event_log_capacity)
+
+    def _default_runner(case, user_input, llm, tools, settings):
+        return run_turn(case, user_input, llm=llm, tools=tools, settings=settings, event_log=event_log)
+
+    run_one_turn = turn_runner or _default_runner
     _print_header(writer)
 
     while case.phase != Phase.CLOSED:
@@ -145,16 +149,6 @@ def run_cli_session(
         writer(f"{_DIM}case closed: {case.case_id}{_RESET}")
 
 
-def _interruptible_run_turn(
-    case: CaseState,
-    user_input: str,
-    llm: BaseLLMClient,
-    tools: dict,
-    settings: Settings,
-) -> str:
-    return run_turn(case, user_input, llm=llm, tools=tools, settings=settings)
-
-
 def _stdin_is_tty() -> bool:
     try:
         return sys.stdin.isatty()
@@ -182,7 +176,7 @@ def _handle_command(
         case "/status":
             writer(_format_status(case, settings))
         case "/trace":
-            writer(_format_trace(event_log))
+            writer(_format_trace(event_log, case.case_id))
         case "/clear":
             clear()
             _print_header(writer)
@@ -210,8 +204,8 @@ def _format_status(case: CaseState, settings: Settings) -> str:
     )
 
 
-def _format_trace(event_log: InMemoryEventLog, limit: int = 8) -> str:
-    events = event_log.events()[-limit:]
+def _format_trace(event_log: InMemoryEventLog, case_id: str, limit: int = 8) -> str:
+    events = event_log.get_events_for_case(case_id, limit=limit)
     if not events:
         return "No runtime events recorded yet."
 
@@ -221,7 +215,8 @@ def _format_trace(event_log: InMemoryEventLog, limit: int = 8) -> str:
         if event.details:
             pairs = ", ".join(f"{key}={value}" for key, value in event.details.items())
             detail = f" ({pairs})"
-        lines.append(f"- {event.type}: phase={event.phase} confidence={event.confidence:.2f}{detail}")
+        confidence_text = f" confidence={event.confidence:.2f}"
+        lines.append(f"- {event.event_type}: phase={event.phase}{confidence_text}{detail}")
     return "\n".join(lines)
 
 

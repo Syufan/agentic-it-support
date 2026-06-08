@@ -3,202 +3,86 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-
-"""
-Runtime observability records a bounded event timeline, not a full case dump.
-
-CaseState owns durable conversation, tool traces, and handoff context. Events
-capture process metadata that explains why the agent moved: LLM calls, guard
-retries, tool calls, phase changes, escalations, and handoff writes. Do not log
-full prompts, secrets, full user-directory records, or full tool outputs by
-default.
-"""
+from agentic_it_support.state.case_state import CaseState
 
 
 @dataclass
 class Event:
-    type: str
+    """A trace event. case_id is the primary lens for reading the flow back."""
     case_id: str
     phase: str
+    event_type: str
     confidence: float
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     details: dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class InMemoryEventLog:
+    """In-memory event sink. Assembled in the (main/cli)"""
+
     def __init__(self, max_events: int | None = None) -> None:
-        # Optional bounded in-memory event buffer.
         self._events: deque[Event] = deque(maxlen=max_events)
 
     def record(self, event: Event) -> None:
         self._events.append(event)
 
-    def events(self) -> list[Event]:
-        return list(self._events)
+    def get_events_for_case(self, case_id: str, limit: int | None = None) -> list[Event]:
+        events = [event for event in self._events if event.case_id == case_id]
+        if limit is not None:
+            return events[-limit:]
+        return events
 
-    def of_type(self, event_type: str) -> list[Event]:
-        return [e for e in self._events if e.type == event_type]
-
-
-# ── helpers called by the controller ─────────────────────────────────────────
-
-def record_turn_start(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-) -> None:
-    log.record(Event(type="turn_start", case_id=case_id, phase=phase, confidence=confidence))
-
-
-def record_turn_end(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    outcome: str,
-) -> None:
+def _emit(log: InMemoryEventLog | None, case: CaseState, event_type: str, **details: Any) -> None:
+    if log is None:
+        return
     log.record(Event(
-        type="turn_end",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"outcome": outcome},
+        event_type=event_type,
+        case_id=case.case_id,
+        phase=case.phase.value,
+        confidence=case.confidence,
+        details=details,
     ))
 
 
-def record_tool_call(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    tool_name: str,
-    success: bool,
-    inputs: dict[str, Any],
-) -> None:
-    log.record(Event(
-        type="tool_call",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"tool_name": tool_name, "success": success, "inputs": inputs},
-    ))
+def record_turn_start(log: InMemoryEventLog | None, case: CaseState, user_message: str) -> None:
+    _emit(log, case, "turn_start", user_message=user_message)
 
 
-def record_guard_retry(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    action: str,
-    reason: str,
-) -> None:
-    log.record(Event(
-        type="guard_retry",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"action": action, "reason": reason},
-    ))
+def record_turn_end(log: InMemoryEventLog | None, case: CaseState, agent_reply: str) -> None:
+    _emit(log, case, "turn_end", agent_reply=agent_reply)
 
 
-def record_llm_parse_error(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    error: str,
-) -> None:
-    log.record(Event(
-        type="llm_parse_error",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"error": error},
-    ))
+def record_llm_call(log: InMemoryEventLog | None, case: CaseState, proposed_action: str, latency_ms: float) -> None:
+    _emit(log, case, "llm_call", proposed_action=proposed_action, latency_ms=latency_ms)
 
 
-def record_llm_call(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    prompt_tokens: int,
-    completion_tokens: int,
-    latency_ms: float,
-) -> None:
-    log.record(Event(
-        type="llm_call",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "latency_ms": latency_ms,
-        },
-    ))
+def record_llm_parse_error(log: InMemoryEventLog | None, case: CaseState, error: str) -> None:
+    _emit(log, case, "llm_parse_error", error=error)
 
 
-def record_runtime_limit_hit(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    limit: str,
-) -> None:
-    log.record(Event(
-        type="runtime_limit_hit",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"limit": limit},
-    ))
+def record_tool_start(log: InMemoryEventLog | None, case: CaseState, tool_name: str, inputs: dict[str, Any]) -> None:
+    _emit(log, case, "tool_start", tool_name=tool_name, inputs=inputs)
 
 
-def record_phase_transition(
-    log: InMemoryEventLog,
-    case_id: str,
-    confidence: float,
-    from_phase: str,
-    to_phase: str,
-) -> None:
-    log.record(Event(
-        type="phase_transition",
-        case_id=case_id,
-        phase=to_phase,
-        confidence=confidence,
-        details={"from_phase": from_phase, "to_phase": to_phase},
-    ))
+def record_tool_end(log: InMemoryEventLog | None, case: CaseState, tool_name: str, success: bool, output: Any, conf_before: float) -> None:
+    _emit(log, case, "tool_end", tool_name=tool_name, success=success, output=output, conf_before=conf_before)
 
 
-def record_escalation(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    reason: str,
-) -> None:
-    log.record(Event(
-        type="escalation",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"reason": reason},
-    ))
+def record_guard(log: InMemoryEventLog | None, case: CaseState, action: str, verdict: str, reason: str | None = None) -> None:
+    _emit(log, case, "guard", agent_proposal=action, verdict=verdict, reason=reason)
 
 
-def record_handoff_written(
-    log: InMemoryEventLog,
-    case_id: str,
-    phase: str,
-    confidence: float,
-    path: str,
-) -> None:
-    log.record(Event(
-        type="handoff_written",
-        case_id=case_id,
-        phase=phase,
-        confidence=confidence,
-        details={"path": path},
-    ))
+def record_phase_transition(log: InMemoryEventLog | None, case: CaseState, from_phase: str, to_phase: str, action: str) -> None:
+    _emit(log, case, "phase_transition", from_phase=from_phase, to_phase=to_phase, action=action)
+
+
+def record_limit_hit(log: InMemoryEventLog | None, case: CaseState, limit: str) -> None:
+    _emit(log, case, "limit_hit", limit=limit)
+
+
+def record_escalation(log: InMemoryEventLog | None, case: CaseState, reason: str) -> None:
+    _emit(log, case, "escalation", reason=reason)
+
+
+def record_handoff_written(log: InMemoryEventLog | None, case: CaseState, path: str) -> None:
+    _emit(log, case, "handoff_written", path=path)

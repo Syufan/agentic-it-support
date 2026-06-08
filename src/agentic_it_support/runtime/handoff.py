@@ -2,6 +2,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentic_it_support.observability.event_tracing import (
+    InMemoryEventLog,
+    record_handoff_written,
+)
 from agentic_it_support.state.case_state import CaseState, Phase
 
 _HANDOFF_TAIL = (
@@ -11,16 +15,23 @@ _HANDOFF_TAIL = (
 
 _REASON = "This needs a closer review before we can continue."
 
-def finalize_handoff(case: CaseState, reason: str, *, output_dir: Path) -> str:
+def finalize_handoff(
+    case: CaseState,
+    reason: str,
+    *,
+    output_dir: Path,
+    event_log: InMemoryEventLog | None = None,
+) -> str:
     """Finaliza human handoff for any runtime escalation decision."""
     case.escalation_context = _build_handoff_context(
         case,
         user_facing_reason=_REASON,
         internal_reason=reason
     )
-    _write_handoff_json(case.escalation_context, output_dir)
+    path = _write_handoff_json(case.escalation_context, output_dir)
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
+    record_handoff_written(event_log, case, str(path))
 
     return f"{_REASON} {_HANDOFF_TAIL}"
 

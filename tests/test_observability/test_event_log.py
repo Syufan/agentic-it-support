@@ -4,148 +4,198 @@ from agentic_it_support.observability.event_tracing import (
     Event,
     InMemoryEventLog,
     record_escalation,
-    record_guard_retry,
+    record_guard,
     record_handoff_written,
+    record_limit_hit,
+    record_llm_call,
     record_llm_parse_error,
     record_phase_transition,
-    record_runtime_limit_hit,
-    record_tool_call,
+    record_tool_end,
+    record_tool_start,
     record_turn_end,
     record_turn_start,
 )
+from agentic_it_support.state.case_state import CaseState, Phase
+
+
+def _case(case_id="case-1", phase=Phase.INTAKE, confidence=0.0) -> CaseState:
+    return CaseState(case_id=case_id, phase=phase, confidence=confidence)
 
 
 # ── Event dataclass ───────────────────────────────────────────────────────────
 
-def test_event_has_type_and_phase():
-    e = Event(type="turn_start", case_id="abc", phase="intake", confidence=0.5)
-    assert e.type == "turn_start"
+def test_event_carries_core_fields():
+    e = Event(event_type="turn_start", case_id="abc", phase="intake", confidence=0.0)
+    assert e.event_type == "turn_start"
     assert e.phase == "intake"
+    assert e.confidence == 0.0
 
 
 def test_event_timestamp_is_datetime():
-    e = Event(type="turn_start", case_id="abc", phase="intake", confidence=0.5)
+    e = Event(event_type="turn_start", case_id="abc", phase="intake", confidence=0.0)
     assert isinstance(e.timestamp, datetime)
 
 
 def test_event_details_defaults_to_empty():
-    e = Event(type="turn_start", case_id="abc", phase="intake", confidence=0.5)
+    e = Event(event_type="turn_start", case_id="abc", phase="intake", confidence=0.0)
     assert e.details == {}
 
 
-# ── InMemoryEventLog basic ────────────────────────────────────────────────────
+# ── InMemoryEventLog ──────────────────────────────────────────────────────────
+
+def _evt(case_id="x", event_type="turn_start"):
+    return Event(event_type=event_type, case_id=case_id, phase="intake", confidence=0.0)
+
 
 def test_empty_log_has_no_events():
-    log = InMemoryEventLog()
-    assert log.events() == []
+    assert InMemoryEventLog().get_events_for_case("case-1") == []
 
 
 def test_record_appends_event():
     log = InMemoryEventLog()
-    log.record(Event(type="turn_start", case_id="x", phase="intake", confidence=0.5))
-    assert len(log.events()) == 1
+    log.record(_evt())
+    assert len(log.get_events_for_case("x")) == 1
 
 
-def test_events_returns_copy():
+def test_get_events_for_case_returns_copy():
     log = InMemoryEventLog()
-    log.record(Event(type="turn_start", case_id="x", phase="intake", confidence=0.5))
-    copy = log.events()
-    copy.clear()
-    assert len(log.events()) == 1
+    log.record(_evt())
+    log.get_events_for_case("x").clear()
+    assert len(log.get_events_for_case("x")) == 1
 
 
-def test_of_type_filters_by_event_type():
+def test_get_events_for_case_filters_by_case_id():
     log = InMemoryEventLog()
-    log.record(Event(type="turn_start", case_id="x", phase="intake", confidence=0.5))
-    log.record(Event(type="tool_call", case_id="x", phase="investigating", confidence=0.6))
-    assert len(log.of_type("tool_call")) == 1
-    assert log.of_type("tool_call")[0].type == "tool_call"
+    log.record(_evt(case_id="case-1"))
+    log.record(_evt(case_id="case-2", event_type="tool_end"))
+    assert [e.case_id for e in log.get_events_for_case("case-1")] == ["case-1"]
 
 
-def test_of_type_returns_empty_for_unknown_type():
+def test_get_events_for_case_can_limit_results():
     log = InMemoryEventLog()
-    assert log.of_type("nonexistent") == []
+    for i in range(3):
+        log.record(_evt(case_id="case-1", event_type=str(i)))
+    assert [e.event_type for e in log.get_events_for_case("case-1", limit=2)] == ["1", "2"]
 
 
 def test_unbounded_by_default():
     log = InMemoryEventLog()
     for _ in range(100):
-        log.record(Event(type="t", case_id="x", phase="intake", confidence=0.0))
-    assert len(log.events()) == 100
+        log.record(_evt())
+    assert len(log.get_events_for_case("x")) == 100
 
 
 def test_max_events_drops_oldest():
     log = InMemoryEventLog(max_events=2)
     for i in range(3):
-        log.record(Event(type=str(i), case_id="x", phase="intake", confidence=0.0))
-    assert [e.type for e in log.events()] == ["1", "2"]
+        log.record(_evt(event_type=str(i)))
+    assert [e.event_type for e in log.get_events_for_case("x")] == ["1", "2"]
 
 
-# ── record_* helpers ──────────────────────────────────────────────────────────
+# ── probes read identity/phase/confidence from the case ───────────────────────
 
-def test_record_turn_start_writes_turn_start_event():
+def test_emit_pulls_core_fields_from_case():
     log = InMemoryEventLog()
-    record_turn_start(log, "case-1", "intake", 0.0)
-    events = log.of_type("turn_start")
-    assert len(events) == 1
-    assert events[0].case_id == "case-1"
-    assert events[0].phase == "intake"
+    record_turn_start(log, _case(phase=Phase.CLARIFYING, confidence=0.35), "hi")
+    e = log.get_events_for_case("case-1")[0]
+    assert (e.case_id, e.phase, e.confidence) == ("case-1", "clarifying", 0.35)
 
 
-def test_record_turn_end_captures_outcome():
+def test_none_log_is_a_noop():
+    # Probe call sites stay unconditional; a missing log records nothing.
+    record_turn_start(None, _case(), "hi")  # must not raise
+
+
+def test_record_turn_start_captures_user_message():
     log = InMemoryEventLog()
-    record_turn_end(log, "case-1", "resolving", 0.8, "terminate")
-    event = log.of_type("turn_end")[0]
-    assert event.details["outcome"] == "terminate"
+    record_turn_start(log, _case(), "my vpn is down")
+    e = log.get_events_for_case("case-1")[0]
+    assert e.event_type == "turn_start"
+    assert e.details["user_message"] == "my vpn is down"
 
 
-def test_record_tool_call_captures_details():
+def test_record_turn_end_captures_reply_and_phase_as_outcome():
     log = InMemoryEventLog()
-    record_tool_call(log, "case-1", "investigating", 0.6, "kb_search", True, {"query": "vpn"})
-    event = log.of_type("tool_call")[0]
-    assert event.details["tool_name"] == "kb_search"
-    assert event.details["success"] is True
-    assert event.details["inputs"] == {"query": "vpn"}
+    record_turn_end(log, _case(phase=Phase.RESOLVING), "try these steps")
+    e = log.get_events_for_case("case-1")[0]
+    assert e.details["agent_reply"] == "try these steps"
+    # the terminal phase IS the outcome; no separate outcome field
+    assert e.phase == "resolving"
+    assert "outcome" not in e.details
 
 
-def test_record_guard_retry_captures_action_and_reason():
+def test_record_llm_call_captures_action_and_latency():
     log = InMemoryEventLog()
-    record_guard_retry(log, "case-1", "investigating", 0.2, "resolve", "low confidence")
-    event = log.of_type("guard_retry")[0]
-    assert event.details["action"] == "resolve"
-    assert event.details["reason"] == "low confidence"
+    record_llm_call(log, _case(), "call_tool", 123.4)
+    e = log.get_events_for_case("case-1")[0]
+    assert e.details["proposed_action"] == "call_tool"
+    assert e.details["latency_ms"] == 123.4
 
 
 def test_record_llm_parse_error_captures_error():
     log = InMemoryEventLog()
-    record_llm_parse_error(log, "case-1", "intake", 0.0, "invalid json")
-    assert log.of_type("llm_parse_error")[0].details["error"] == "invalid json"
+    record_llm_parse_error(log, _case(), "invalid json")
+    assert log.get_events_for_case("case-1")[0].details["error"] == "invalid json"
 
 
-def test_record_runtime_limit_hit_captures_limit_name():
+def test_record_tool_start_captures_name_and_inputs():
     log = InMemoryEventLog()
-    record_runtime_limit_hit(log, "case-1", "investigating", 0.4, "max_inner_iterations")
-    assert log.of_type("runtime_limit_hit")[0].details["limit"] == "max_inner_iterations"
+    record_tool_start(log, _case(phase=Phase.INVESTIGATING), "kb_search", {"query": "vpn"})
+    e = log.get_events_for_case("case-1")[0]
+    assert e.event_type == "tool_start"
+    assert e.details["tool_name"] == "kb_search"
+    assert e.details["inputs"] == {"query": "vpn"}
 
 
-def test_record_phase_transition_tracks_from_and_to():
+def test_record_tool_end_captures_success_output_and_conf_before():
     log = InMemoryEventLog()
-    record_phase_transition(log, "case-1", 0.5, "intake", "clarifying")
-    event = log.of_type("phase_transition")[0]
-    assert event.details["from_phase"] == "intake"
-    assert event.details["to_phase"] == "clarifying"
-    assert event.phase == "clarifying"
+    record_tool_end(log, _case(confidence=0.35), "kb_search", True, {"results": ["vpn guide"]}, conf_before=0.0)
+    e = log.get_events_for_case("case-1")[0]
+    assert e.details["success"] is True
+    assert e.details["output"] == {"results": ["vpn guide"]}
+    assert e.details["conf_before"] == 0.0
+    # the post-tool confidence rides the top-level field
+    assert e.confidence == 0.35
+
+
+def test_record_guard_captures_action_verdict_reason():
+    log = InMemoryEventLog()
+    record_guard(log, _case(), "resolve", "retry", "confidence below threshold")
+    e = log.get_events_for_case("case-1")[0]
+    assert e.details["agent_proposal"] == "resolve"
+    assert e.details["verdict"] == "retry"
+    assert e.details["reason"] == "confidence below threshold"
+
+
+def test_record_guard_allow_has_no_reason():
+    log = InMemoryEventLog()
+    record_guard(log, _case(), "resolve", "allow")
+    assert log.get_events_for_case("case-1")[0].details["reason"] is None
+
+
+def test_record_phase_transition_tracks_from_to_and_trigger():
+    log = InMemoryEventLog()
+    record_phase_transition(log, _case(phase=Phase.CLARIFYING), "intake", "clarifying", "ask_user")
+    e = log.get_events_for_case("case-1")[0]
+    assert e.details["from_phase"] == "intake"
+    assert e.details["to_phase"] == "clarifying"
+    assert e.details["action"] == "ask_user"
+    assert e.phase == "clarifying"
+
+
+def test_record_limit_hit_captures_limit_name():
+    log = InMemoryEventLog()
+    record_limit_hit(log, _case(), "max_corrections")
+    assert log.get_events_for_case("case-1")[0].details["limit"] == "max_corrections"
 
 
 def test_record_escalation_captures_reason():
     log = InMemoryEventLog()
-    record_escalation(log, "case-1", "investigating", 0.3, "needs human review")
-    event = log.of_type("escalation")[0]
-    assert event.details["reason"] == "needs human review"
+    record_escalation(log, _case(), "LLM repeatedly failed guard checks")
+    assert log.get_events_for_case("case-1")[0].details["reason"] == "LLM repeatedly failed guard checks"
 
 
 def test_record_handoff_written_captures_path():
     log = InMemoryEventLog()
-    record_handoff_written(log, "case-1", "escalating", 0.3, "output/handoffs/case-1.json")
-    event = log.of_type("handoff_written")[0]
-    assert event.details["path"] == "output/handoffs/case-1.json"
+    record_handoff_written(log, _case(phase=Phase.ESCALATING), "handoffs/case-1.json")
+    assert log.get_events_for_case("case-1")[0].details["path"] == "handoffs/case-1.json"
