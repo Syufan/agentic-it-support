@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_DATA_DIR = Path("data")
 _ENV_FILES = (".env", "../.env")
+DEFAULT_HANDOFF_OUTPUT_DIR = Path("output/handoffs")
 
 class RuntimeLimits(BaseModel):
     max_inner_iterations: int = Field(6, gt=0, le=20)
@@ -42,6 +43,9 @@ class Settings(BaseSettings):
 
     # Business policy file path relative to data_dir
     policy_file: Path = Path("policies/policies.json")
+
+    # Local handoff payload output
+    handoff_output_dir: Path = DEFAULT_HANDOFF_OUTPUT_DIR
 
     # Observability settings
     event_log_capacity: int = Field(default=1000, gt=0)

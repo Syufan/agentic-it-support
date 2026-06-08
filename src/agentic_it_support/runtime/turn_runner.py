@@ -29,7 +29,7 @@ def run_turn(case: CaseState, user_message: str, *, llm: BaseLLMClient, tools: d
             return message
 
         case Escalate(reason=reason):
-            return finalize_handoff(case, reason)
+            return finalize_handoff(case, reason, output_dir=settings.handoff_output_dir)
 
 def _run_agent_loop(case: CaseState, *,  llm: BaseLLMClient, tools: dict[str, BaseTool], settings: Settings) -> Terminate | Escalate:
     correction: str | None = None

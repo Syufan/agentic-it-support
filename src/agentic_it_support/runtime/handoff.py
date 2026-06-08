@@ -1,3 +1,7 @@
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from agentic_it_support.state.case_state import CaseState, Phase
 
 _HANDOFF_TAIL = (
@@ -7,13 +11,14 @@ _HANDOFF_TAIL = (
 
 _REASON = "This needs a closer review before we can continue."
 
-def finalize_handoff(case: CaseState, reason: str) -> str:
+def finalize_handoff(case: CaseState, reason: str, *, output_dir: Path) -> str:
     """Finaliza human handoff for any runtime escalation decision."""
     case.escalation_context = _build_handoff_context(
         case,
         user_facing_reason=_REASON,
         internal_reason=reason
     )
+    _write_handoff_json(case.escalation_context, output_dir)
     case.phase = Phase.ESCALATING
     case.handoff_completed = True
 
@@ -21,6 +26,8 @@ def finalize_handoff(case: CaseState, reason: str) -> str:
 
 def _build_handoff_context(case: CaseState, *, user_facing_reason: str, internal_reason: str) -> dict:
     return{
+        "case_id": case.case_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "user_facing_reason": user_facing_reason,
         "internal_reason": internal_reason,
         "confidence": case.confidence,
@@ -36,3 +43,14 @@ def _build_handoff_context(case: CaseState, *, user_facing_reason: str, internal
         ],
         "resolution_attempts": case.resolution_attempts
     }
+
+
+def _write_handoff_json(context: dict, output_dir: Path) -> Path:
+    """Persist the handoff payload locally for demo inspection."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{context['case_id']}.json"
+    path.write_text(
+        json.dumps(context, indent=2, ensure_ascii=False, default=str) + "\n",
+        encoding="utf-8",
+    )
+    return path
