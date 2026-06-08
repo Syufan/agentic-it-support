@@ -15,7 +15,6 @@ from agentic_it_support.tools import build_tools
 _DIM = "\033[2m"
 _BOLD = "\033[1m"
 _RESET = "\033[0m"
-_ESC = "\x1b"
 
 _HELP = """Commands:
   /help     show commands
@@ -45,7 +44,7 @@ _SPINNER_CLEAR = "\r\033[2K"
 
 def format_waiting_line(frame_idx: int, elapsed: float, phase: str) -> str:
     frame = _SPINNER_FRAMES[frame_idx % len(_SPINNER_FRAMES)]
-    text = f"  {frame} thinking... {elapsed:.1f}s  [phase: {phase}]  (ESC to cancel)"
+    text = f"  {frame} thinking... {elapsed:.1f}s  [phase: {phase}]"
     try:
         width = os.get_terminal_size().columns
     except OSError:
