@@ -78,21 +78,21 @@ def test_t10_resolving_to_closed_when_confirmed():
     assert evaluate_transition(resolving(user_confirmed_resolution=True), RESOLVE).next_phase == Phase.CLOSED
 
 
-# ── T11: resolving → escalating when the user reports the fix failed ──────────
-# A disconfirmed resolution now routes straight to ESCALATING; the resolution-attempt
-# budget is enforced in the executor, not in the transition, so the transition no
-# longer sends a failed fix back to INVESTIGATING.
+# ── T11: resolving → investigating when the user reports the fix failed ───────
+# A disconfirmed resolution means the proposed fix did not work. The agent should
+# continue investigating so it can refine the diagnosis or try another grounded
+# path. The resolution-attempt budget is enforced before proposing another fix.
 
-def test_t11_resolving_to_escalating_when_not_confirmed():
-    result = evaluate_transition(resolving(user_confirmed_resolution=False, resolution_attempts=1), RESOLVE)
-    assert result.next_phase == Phase.ESCALATING
+def test_t11_resolving_to_investigating_when_not_confirmed():
+    result = evaluate_transition(resolving(user_confirmed_resolution=False, resolution_attempts=1), ASK)
+    assert result.next_phase == Phase.INVESTIGATING
 
 
-# ── T13: resolving → escalating ──────────────────────────────────────────────
+# ── T13: resolving failure transition does not enforce attempt budget ─────────
 
-def test_t13_to_escalating_when_max_attempts_reached():
+def test_t13_resolving_failed_fix_still_returns_to_investigating_at_attempt_limit():
     case = resolving(user_confirmed_resolution=False, resolution_attempts=2)
-    assert evaluate_transition(case, RESOLVE).next_phase == Phase.ESCALATING
+    assert evaluate_transition(case, ASK).next_phase == Phase.INVESTIGATING
 
 
 # ── T14: escalating → closed (handoff completed) ─────────────────────────────
@@ -108,4 +108,3 @@ def test_t14_escalating_stays_when_handoff_not_done():
 
 def test_closed_stays_closed():
     assert evaluate_transition(CaseState(phase=Phase.CLOSED), RESOLVE).next_phase == Phase.CLOSED
-

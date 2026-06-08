@@ -80,7 +80,7 @@ def _from_resolving(case: CaseState) -> TransitionResult:
         return _result(Phase.CLOSED)                             # T10
 
     if case.user_confirmed_resolution is False:               # T11
-        return _result(Phase.ESCALATING)
+        return _result(Phase.INVESTIGATING)
 
     return _result(Phase.RESOLVING)
 
