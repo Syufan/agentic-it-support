@@ -228,9 +228,13 @@ For complex or ambiguous cases, I would add a planning mode before normal invest
 
 I would also replace free-form clarification with a structured clarification tool. Each question would be tied to a missing case field, so the runtime can tell whether the case is ready for investigation or still needs user input.
 
+I would also cross-check LLM-inferred resolution confirmations against the latest user message before updating case state.
+
 ### 4. Explicit Case Grounding
 
 I would make case grounding more explicit in state. A production version could track fields such as affected target, symptom, environment, start time, user goal, and whether each field is unknown, inferred, or confirmed.
+
+I would also replace the current keyword-based affected-target check with structured grounding or named-entity extraction.
 
 I did not implement the full grounding state in this prototype because it would require changes to the proposal schema, prompt format, state update logic, ambiguity handling, and tests. Instead, this version uses the existing CaseState, prompt guidance, and a minimum completeness gate before RESOLVE to prevent vague issues from becoming fake grounded answers.
 
@@ -238,7 +242,7 @@ I did not implement the full grounding state in this prototype because it would 
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
 
-I would also add memory filtering and context projection. The current system keeps the conversation in case state and sends a bounded case snapshot to the model. A production version should extract useful context into structured state and send only the relevant context for the current step.
+I would also improve context projection. The runtime keeps full case memory, but the model should receive only bounded, decision-relevant context such as phase, confidence, retry attempts, and recent tool evidence.
 
 
 ## Optional Design Note
