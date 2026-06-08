@@ -18,7 +18,6 @@ def check_diagnosis(case: CaseState, proposal: AgentProposal, confidence_setting
 
     if proposal.action == AgentAction.RESOLVE:
         # A resolution needs an identified affected target, only user-provided text count
-        # TODO: replace keyword matching with structured grounding or NER
         if not _names_affected_target(case):
             return DiagnosisResult(
                 False,
@@ -59,23 +58,3 @@ def _names_affected_target(case: CaseState) -> bool:
     """Return true when user text names an affected app, service, device, or network."""
     text = " ".join( m["content"].lower() for m in case.conversation if m["role"] == "user")
     return bool(_AFFECTED_TARGET.search(text))
-
-
-
-# vague checking
-# def has_usable_issue_description(case: CaseState) -> bool:
-#     """Return true once the user has described an affected target or symptom."""
-#     text = " ".join(
-#         m["content"].lower() for m in case.conversation if m["role"] == "user"
-#     )
-#     return not needs_issue_description(text)
-
-# def needs_issue_description(text: str) -> bool:
-#     """Return true for greetings or text too vague to describe an IT issue."""
-#     normalized = re.sub(r"[^\w\s-]", "", text.lower()).strip()
-#     if not normalized:
-#         return True
-#     if normalized in {"hi", "hello", "hey", "help", "help me"}:
-#         return True
-#     return len(normalized.split()) < 2 and not _AFFECTED_TARGET.search(normalized)
-

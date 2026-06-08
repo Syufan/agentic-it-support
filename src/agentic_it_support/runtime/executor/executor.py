@@ -114,5 +114,3 @@ def _execute_escalation(proposal: AgentProposal) -> Escalate:
     if reason is None:
         raise ValueError("ESCALATE proposal missing escalation_reason after validation")
     return Escalate(reason)
-
-#TODO LLM 可以提取用户确认状态，但 runtime 要用最新用户文本做 最小交叉验证。
