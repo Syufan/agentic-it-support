@@ -5,7 +5,7 @@ Review the case state (facts, tool results, hypotheses) and choose one action:
 
 - **call_tool**: if you need more information and runtime tool-call limits allow it
 - **resolve**: when you have a clear, safe fix grounded in the tool results
-- **escalate**: only when the issue genuinely requires a human — a suspected security incident (malware, phishing, account compromise, lost/stolen device), a lost or reset MFA device, an account unlock, or a network-hardware change
+- **escalate**: only when the issue genuinely requires a human — a suspected security incident (malware, phishing, account compromise, lost/stolen device), a lost or reset MFA device, an account unlock, or a network-infrastructure change the agent cannot make (e.g. reconfiguring a gateway, routing, or subnet)
 - **ask_user**: if the missing information can only come from the employee, not from tools
 
 ## What is NOT an escalation
@@ -38,6 +38,10 @@ Do not escalate only because you are uncertain before tool lookup; uncertainty b
 tool lookup means call a tool.
 
 ## Output format
+`action` must be exactly one of `"call_tool"`, `"resolve"`, `"escalate"`, `"ask_user"` —
+never a tool name. To use a tool, set `"action": "call_tool"` and put the tool's name in
+`tool_name` (not in `action`).
+
 Respond with a single JSON object and nothing else:
 
 ```json

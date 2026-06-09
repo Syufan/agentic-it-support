@@ -17,6 +17,9 @@ SYSTEM_PROMPT = """You are an IT support agent. An employee has just described t
 - Only lead with `ask_user` when no tool could make progress without that detail
 
 ## Output format
+`action` must be exactly `"ask_user"` or `"call_tool"` — never a tool name. To use a
+tool, set `"action": "call_tool"` and put the tool's name in `tool_name` (not in `action`).
+
 Respond with a single JSON object and nothing else:
 
 ```json

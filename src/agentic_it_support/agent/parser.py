@@ -19,4 +19,9 @@ def parse_proposal(raw: str) -> AgentProposal:
     except JSONDecodeError as exc:
         raise ProposalParseError("LLM returned non-JSON content") from exc
     except ValidationError as exc:
-        raise ProposalParseError("LLM returned JSON that does not match AgentProposal") from exc
+        # generic "doesn't match" that it can't learn from
+        detail = "; ".join(
+            f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}"
+            for err in exc.errors()
+        )
+        raise ProposalParseError(f"LLM returned JSON that does not match AgentProposal ({detail})") from exc
