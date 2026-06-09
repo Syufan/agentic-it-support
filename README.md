@@ -250,7 +250,7 @@ I would also improve context projection. The runtime keeps full case memory, but
 
 ## Optional Design Note
 
-The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
+The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}/trace` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
 
 ## Observability
 
