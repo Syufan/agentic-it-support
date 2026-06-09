@@ -84,6 +84,30 @@ def test_failed_tool_records_failure_trace():
     assert case.confidence == 0.0
 
 
+class RaisingTool(BaseTool):
+    name = "kb_search"
+    description = "mock that blows up"
+
+    def run(self, inputs: dict[str, Any]) -> ToolResult:
+        raise RuntimeError("disk on fire")
+
+
+def test_raising_tool_degrades_gracefully_instead_of_crashing():
+    case = CaseState(phase=Phase.INVESTIGATING)
+    tools = {"kb_search": RaisingTool()}
+    proposal = _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                         tool_input={"query": "vpn"}, message=None)
+
+    # must not raise; the failure becomes a failed tool trace
+    outcome = _execute(case, proposal, tools)
+    assert isinstance(outcome, Continue)
+    trace = case.tool_traces[0]
+    assert trace.success is False
+    assert "disk on fire" in trace.output["error"]
+    assert case.tool_calls_total == 1          # the attempt still counts against the budget
+    assert case.confidence == 0.0              # a broken tool never grounds a resolve
+
+
 # ── ASK_USER ──────────────────────────────────────────────────────────────────
 
 def test_ask_user_terminates_with_message():

@@ -3,7 +3,7 @@ from agentic_it_support.config.settings import ConfidenceSettings, RuntimeLimits
 from agentic_it_support.runtime.limits import clarification_limit_reached
 from agentic_it_support.state.case_state import CaseState, Phase, ToolTrace
 from agentic_it_support.agent.proposals import AgentAction, AgentProposal
-from agentic_it_support.tools.base import BaseTool
+from agentic_it_support.tools.base import BaseTool, ToolResult
 from agentic_it_support.runtime.executor.confidence import compute_confidence
 from agentic_it_support.runtime.result import Continue, Escalate, Terminate
 from agentic_it_support.runtime.transitions import evaluate_transition
@@ -81,8 +81,11 @@ def _execute_tool(case: CaseState, proposal: AgentProposal, tools: dict[str, Bas
     if tool_name is None:
         raise ValueError("CALL_TOOL proposal missing tool_name after validation")
 
-    tool = tools[tool_name]
-    result = tool.run(proposal.tool_input)
+    tool = tools[tool_name]  # tool_name is validated against the registry by the guard
+    try:
+        result = tool.run(proposal.tool_input)
+    except Exception as exc:
+        result = ToolResult(success=False, data={}, error=f"{type(exc).__name__}: {exc}")
 
     case.tool_traces.append(
         ToolTrace(

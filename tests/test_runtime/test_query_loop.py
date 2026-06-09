@@ -115,6 +115,29 @@ def test_failed_tool_trace_has_success_false():
     assert case.tool_traces[0].success is False
 
 
+class _RaisingTool(BaseTool):
+    name = "kb_search"
+    description = "mock that blows up"
+
+    def run(self, inputs: dict[str, Any]) -> ToolResult:
+        raise RuntimeError("disk on fire")
+
+
+def test_run_turn_survives_a_tool_that_raises():
+    # A tool exception must not crash the turn; the agent recovers on the next step.
+    case = CaseState(phase=Phase.INVESTIGATING)
+    case.conversation = [{"role": "user", "content": "my vpn keeps timing out"}]
+    proposals = [
+        _proposal(action=AgentAction.CALL_TOOL, tool_name="kb_search",
+                  tool_input={"query": "vpn"}, message=None),
+        _proposal(action=AgentAction.ASK_USER, message="What error do you see?"),
+    ]
+    response = _run(case, "VPN broken", MockLLMClient(proposals), {"kb_search": _RaisingTool()})
+    assert response == "What error do you see?"
+    assert case.tool_traces[0].success is False
+    assert case.handoff_completed is False
+
+
 # ── resolve ───────────────────────────────────────────────────────────────────
 
 def test_proposing_a_resolution_enters_resolving_without_counting_an_attempt():
