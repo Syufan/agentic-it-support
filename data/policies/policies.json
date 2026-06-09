@@ -84,7 +84,11 @@
       "match_patterns": [
         ["vpn gateway"],
         ["network hardware"],
-        ["router config"]
+        ["router config"],
+        ["gateway", "reconfigure"],
+        ["gateway", "routing"],
+        ["subnet", "routing"],
+        ["subnet", "reconfigure"]
       ]
     },
     {
