@@ -71,8 +71,10 @@ def record_turn_end(log: InMemoryEventLog, case: CaseState, agent_reply: str) ->
     _emit(log, case, "turn_end", agent_reply=agent_reply)
 
 
-def record_llm_call(log: InMemoryEventLog, case: CaseState, proposed_action: str, latency_ms: float) -> None:
-    _emit(log, case, "llm_call", proposed_action=proposed_action, latency_ms=latency_ms)
+def record_llm_call(log: InMemoryEventLog, case: CaseState, proposed_action: str, latency_ms: float,
+                    prompt_tokens: int, completion_tokens: int, total_tokens: int) -> None:
+    _emit(log, case, "llm_call", proposed_action=proposed_action, latency_ms=latency_ms,
+          prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
 
 
 def record_llm_parse_error(log: InMemoryEventLog, case: CaseState, error: str) -> None:

@@ -121,12 +121,14 @@ def test_record_turn_end_captures_reply_and_phase_as_outcome():
     assert "outcome" not in e.details
 
 
-def test_record_llm_call_captures_action_and_latency():
+def test_record_llm_call_captures_action_latency_and_tokens():
     log = InMemoryEventLog()
-    record_llm_call(log, _case(), "call_tool", 123.4)
+    record_llm_call(log, _case(), "call_tool", 123.4, prompt_tokens=120, completion_tokens=30, total_tokens=150)
     e = log.get_events_for_case("case-1")[0]
     assert e.details["proposed_action"] == "call_tool"
     assert e.details["latency_ms"] == 123.4
+    assert e.details["prompt_tokens"] == 120
+    assert e.details["total_tokens"] == 150
 
 
 def test_record_llm_parse_error_captures_error():

@@ -1,9 +1,7 @@
-import time
-
 from agentic_it_support.agent.proposals import AgentProposal
 from agentic_it_support.config.settings import Settings
 from agentic_it_support.agent.parser import ProposalParseError
-from agentic_it_support.llm.client import BaseLLMClient, LLMClientError
+from agentic_it_support.llm.client import BaseLLMClient, LLMCallStats, LLMClientError
 from agentic_it_support.observability.event_tracing import (
     InMemoryEventLog,
     record_escalation,
@@ -77,9 +75,8 @@ def _run_agent_loop(
             return Escalate(reason="case-level LLM call limit reached before resolution")
 
         # Gate 2: request and parse the next agent proposal
-        start = time.perf_counter()
         try:
-            proposal = _call_agent(case, correction=correction, llm=llm, settings=settings)
+            proposal, stats = _call_agent(case, correction=correction, llm=llm, settings=settings)
 
         except ProposalParseError as exc:
             # Contract failure: retry with correction while budget remains
@@ -97,7 +94,9 @@ def _run_agent_loop(
             # Provider failure: stop this turn and escalate
             return Escalate("LLM provider error during agent proposal request")
         case.llm_calls_total += 1  # Count only successfully parsed LLM proposals
-        record_llm_call(event_log, case, proposal.action.value, (time.perf_counter() - start) * 1000)
+        case.total_tokens += stats.total_tokens
+        record_llm_call(event_log, case, proposal.action.value, stats.latency_ms,
+                        stats.prompt_tokens, stats.completion_tokens, stats.total_tokens)
 
         # Gate 3: guard proposal
         guard_result = check_guard(case, proposal, tools, runtime_limits=settings.limits, confidence_settings=settings.confidence, policy_file=settings.data_dir/settings.policy_file)
@@ -131,6 +130,6 @@ def _run_agent_loop(
     return Escalate("maximum investigation steps reached before resolution")
 
 
-def _call_agent(case: CaseState, correction: str | None, llm: BaseLLMClient, settings: Settings) -> AgentProposal:
+def _call_agent(case: CaseState, correction: str | None, llm: BaseLLMClient, settings: Settings) -> tuple[AgentProposal, LLMCallStats]:
     llm_input = build_messages(case, correction=correction, context_settings=settings.message_context)
     return llm.call(llm_input)

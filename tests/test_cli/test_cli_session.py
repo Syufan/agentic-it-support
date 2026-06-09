@@ -3,7 +3,7 @@ from pathlib import Path
 from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 from agentic_it_support.cli.app import _format_status, run_cli_session, typewrite
 from agentic_it_support.config.settings import Settings
-from agentic_it_support.llm.client import BaseLLMClient, MockLLMClient
+from agentic_it_support.llm.client import BaseLLMClient, LLMCallStats, MockLLMClient
 from agentic_it_support.llm.client import LLMInput
 from agentic_it_support.state.case_state import CaseState, Phase
 
@@ -105,9 +105,9 @@ def test_empty_input_is_skipped():
     calls = []
 
     class _TrackingLLM(BaseLLMClient):
-        def call(self, llm_input: LLMInput) -> AgentProposal:
+        def call(self, llm_input: LLMInput):
             calls.append(llm_input)
-            return _proposal()
+            return _proposal(), LLMCallStats()
 
     _session(CaseState(), _TrackingLLM(), reader=_reader_from(["", "VPN broken"]))
     assert len(calls) == 1
@@ -117,9 +117,9 @@ def test_unknown_command_does_not_call_llm():
     calls = []
 
     class _TrackingLLM(BaseLLMClient):
-        def call(self, llm_input: LLMInput) -> AgentProposal:
+        def call(self, llm_input: LLMInput):
             calls.append(llm_input)
-            return _proposal()
+            return _proposal(), LLMCallStats()
 
     output = []
     _session(CaseState(), _TrackingLLM(), reader=_reader_from(["/unknown"]), writer=output.append)

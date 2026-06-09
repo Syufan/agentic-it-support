@@ -30,11 +30,9 @@ class LLMCallStats:
 
 
 class BaseLLMClient(ABC, Generic[T]):
-    # Stats from the most recent LLM call, when available.
-    last_stats: LLMCallStats | None = None
-
     @abstractmethod
-    def call(self, llm_input: LLMInput) -> T:
+    def call(self, llm_input: LLMInput) -> tuple[T, LLMCallStats]:
+        """Return the parsed response and the call's token/latency stats."""
         ...
 
 
@@ -42,10 +40,10 @@ class MockLLMClient(BaseLLMClient[T]):
     def __init__(self, responses: list[T]) -> None:
         self._queue: deque[T] = deque(responses)
 
-    def call(self, llm_input: LLMInput) -> T:
+    def call(self, llm_input: LLMInput) -> tuple[T, LLMCallStats]:
         if not self._queue:
             raise RuntimeError("MockLLMClient: response queue is empty")
-        return self._queue.popleft()
+        return self._queue.popleft(), LLMCallStats()
 
 
 class LLMClientError(RuntimeError):
@@ -78,7 +76,7 @@ class RealLLMClient(BaseLLMClient[T]):
 
         self._client = client or OpenAI(api_key=api_key)
 
-    def call(self, llm_input: LLMInput) -> T:
+    def call(self, llm_input: LLMInput) -> tuple[T, LLMCallStats]:
         started = time.perf_counter()
         create_kwargs: dict = {
             "model": self._model,
@@ -98,12 +96,12 @@ class RealLLMClient(BaseLLMClient[T]):
         except OpenAIError as exc:
             raise LLMProviderError(f"LLM provider request failed: {exc}") from exc
 
-        self.last_stats = _stats_from(response, (time.perf_counter() - started) * _MS_PER_SECOND)
+        stats = _stats_from(response, (time.perf_counter() - started) * _MS_PER_SECOND)
 
         if not response.choices:
             raise LLMProviderError("LLM returned no choices")
         raw = response.choices[0].message.content or "{}"
-        return self._parse(raw)
+        return self._parse(raw), stats
 
 
 def _stats_from(response, latency_ms: float) -> LLMCallStats:

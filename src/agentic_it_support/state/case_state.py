@@ -35,6 +35,7 @@ class CaseState:
     tool_calls_this_turn: int = 0
     tool_calls_total: int = 0
     llm_calls_total: int = 0
+    total_tokens: int = 0
     clarification_attempts: int = 0
 
     # Confidence

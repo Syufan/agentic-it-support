@@ -4,7 +4,7 @@ from typing import Any
 from agentic_it_support.agent.parser import ProposalParseError
 from agentic_it_support.agent.proposals import AgentAction, AgentProposal
 from agentic_it_support.config.settings import Settings
-from agentic_it_support.llm.client import BaseLLMClient, LLMProviderError, MockLLMClient
+from agentic_it_support.llm.client import BaseLLMClient, LLMCallStats, LLMProviderError, MockLLMClient
 from agentic_it_support.llm.client import LLMInput
 from agentic_it_support.observability.event_tracing import InMemoryEventLog
 from agentic_it_support.runtime.turn_runner import run_turn
@@ -258,11 +258,11 @@ class _ParseThenGoodLLM(BaseLLMClient):
         self._good = good
         self.calls = 0
 
-    def call(self, llm_input: LLMInput) -> AgentProposal:
+    def call(self, llm_input: LLMInput):
         self.calls += 1
         if self.calls == 1:
             raise ProposalParseError("bad json")
-        return self._good
+        return self._good, LLMCallStats()
 
 
 def test_llm_provider_error_escalates_gracefully():
