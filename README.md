@@ -120,14 +120,18 @@ uv sync
 
 ### 3. Run the FastAPI server
 
-Activate the environment, then run the server directly:
+Activate the environment, then run the server as a module:
 
 ```bash
 source .venv/bin/activate
-agentic-it-api
+PYTHONPATH=src python -m agentic_it_support.main
 ```
 
 The server starts at `http://localhost:8000`. Stop it with `Ctrl+C`.
+
+> `PYTHONPATH=src` runs the package straight from `src/` so it doesn't depend on
+> the editable install (the `agentic-it-api` console script needs that install,
+> which can be flaky on this layout). The same applies to the CLI and evaluator below.
 
 Check that it is alive:
 
@@ -153,10 +157,10 @@ curl -s -X POST http://localhost:8000/chat \
   -d '{"case_id": "<case_id>", "message": "Cisco AnyConnect on macOS, home WiFi, already restarted"}' | python3 -m json.tool
 ```
 
-Inspect the full case state:
+Inspect the recorded runtime trace for the case (events, tools, token usage):
 
 ```bash
-curl http://localhost:8000/case/<case_id> | python3 -m json.tool
+curl http://localhost:8000/case/<case_id>/trace | python3 -m json.tool
 ```
 
 ### 5. Run the local CLI
@@ -164,7 +168,7 @@ curl http://localhost:8000/case/<case_id> | python3 -m json.tool
 With the environment activated (step 3):
 
 ```bash
-agentic-it-cli
+PYTHONPATH=src python -m agentic_it_support.cli.app
 ```
 
 Useful CLI commands:
@@ -187,7 +191,7 @@ pytest
 Run the scenario evaluator:
 
 ```bash
-python -m evaluation.runner
+PYTHONPATH=src python -m evaluation.runner
 ```
 
 ## Evaluation
