@@ -82,12 +82,13 @@
       "authorization": "human",
       "notes": "Out of scope for the agent; route to network engineering.",
       "match_patterns": [
-        ["vpn gateway"],
-        ["network hardware"],
-        ["router config"],
-        ["gateway", "reconfigure"],
-        ["gateway", "routing"],
-        ["subnet", "routing"],
+        ["vpn", "gateway", "reconfigure"],
+        ["vpn", "gateway", "change"],
+        ["network hardware", "upgrade"],
+        ["router", "configuration", "change"],
+        ["router", "config", "modify"],
+        ["gateway", "routing", "change"],
+        ["subnet", "routing", "modify"],
         ["subnet", "reconfigure"]
       ]
     },
