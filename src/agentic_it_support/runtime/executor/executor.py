@@ -81,7 +81,7 @@ def _execute_tool(case: CaseState, proposal: AgentProposal, tools: dict[str, Bas
     if tool_name is None:
         raise ValueError("CALL_TOOL proposal missing tool_name after validation")
 
-    tool = tools[tool_name]  # tool_name is validated against the registry by the guard
+    tool = tools[tool_name]
     try:
         result = tool.run(proposal.tool_input)
     except Exception as exc:
