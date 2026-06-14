@@ -1,7 +1,9 @@
-import tools.user_directory as _dir_mod
-from tools.user_directory import UserDirectoryTool
+from pathlib import Path
 
-tool = UserDirectoryTool()
+from agentic_it_support.tools.user_directory import UserDirectoryTool
+
+_USERS_FILE = Path(__file__).resolve().parents[2] / "data" / "user_directory" / "users.json"
+tool = UserDirectoryTool(_USERS_FILE)
 
 
 def test_lookup_by_user_id():
@@ -46,17 +48,15 @@ def test_permissions_is_list():
     assert isinstance(result.data["user"]["permissions"], list)
 
 
-def test_missing_users_file_returns_error_result(tmp_path, monkeypatch):
-    monkeypatch.setattr(_dir_mod, "_USERS_FILE", tmp_path / "nonexistent.json")
-    result = UserDirectoryTool().run({"user_id": "u001"})
+def test_missing_users_file_returns_error_result(tmp_path):
+    result = UserDirectoryTool(tmp_path / "nonexistent.json").run({"user_id": "u001"})
     assert result.success is False
     assert result.error is not None
 
 
-def test_malformed_users_file_returns_error_result(tmp_path, monkeypatch):
+def test_malformed_users_file_returns_error_result(tmp_path):
     bad = tmp_path / "users.json"
     bad.write_text("not valid json")
-    monkeypatch.setattr(_dir_mod, "_USERS_FILE", bad)
-    result = UserDirectoryTool().run({"user_id": "u001"})
+    result = UserDirectoryTool(bad).run({"user_id": "u001"})
     assert result.success is False
     assert result.error is not None

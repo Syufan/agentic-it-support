@@ -1,8 +1,8 @@
 {
   "name": "VPN connectivity troubleshooting",
-  "description": "Safe-guidance case. Employee has a common VPN timeout on macOS. The agent should clarify enough context, use internal tools, and provide grounded troubleshooting guidance rather than escalating immediately.",
+  "description": "Safe-guidance case. Employee starts with a general VPN problem and then provides client, OS, error, and already-tried steps. The agent should use internal tools and provide grounded troubleshooting guidance rather than escalating immediately.",
   "messages": [
-    "My VPN keeps timing out when I try to connect.",
+    "I'm remote and I can't get into internal tools because VPN keeps failing.",
     "Cisco AnyConnect on macOS. It says connection timed out. I already restarted the app and I'm on home WiFi."
   ],
   "expect": {

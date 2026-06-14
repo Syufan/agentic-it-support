@@ -1,14 +1,14 @@
 import pytest
-from llm.client import (
+from agentic_it_support.llm.client import (
     BaseLLMClient,
     LLMConfigurationError,
     LLMProviderError,
     MockLLMClient,
     RealLLMClient,
 )
-from agent.parser import ProposalParseError
-from agent.proposals import AgentAction, AgentProposal
-from runtime.message_builder import LLMInput
+from agentic_it_support.agent.parser import ProposalParseError
+from agentic_it_support.agent.proposals import AgentAction, AgentProposal
+from agentic_it_support.runtime.message_builder import LLMInput
 
 
 def _proposal(**kwargs) -> AgentProposal:
@@ -42,8 +42,8 @@ def test_mock_returns_proposals_in_order():
     p1 = _proposal(message="First question")
     p2 = _proposal(message="Second question")
     client = MockLLMClient([p1, p2])
-    assert client.call(_llm_input()) is p1
-    assert client.call(_llm_input()) is p2
+    assert client.call(_llm_input())[0] is p1
+    assert client.call(_llm_input())[0] is p2
 
 
 def test_mock_raises_when_queue_empty():
@@ -59,8 +59,8 @@ def test_mock_returns_different_action_types():
         _proposal(action=AgentAction.RESOLVE, confidence=0.9),
     ]
     client = MockLLMClient(proposals)
-    first = client.call(_llm_input())
-    second = client.call(_llm_input())
+    first, _ = client.call(_llm_input())
+    second, _ = client.call(_llm_input())
     assert first.action == AgentAction.CALL_TOOL
     assert second.action == AgentAction.RESOLVE
 
@@ -118,7 +118,7 @@ def test_real_llm_delegates_raw_content_to_parser():
         return "parsed"
 
     client = RealLLMClient(response_parser=parser, api_key="", client=_FakeOpenAIClient('{"x": 1}'))
-    result = client.call(_llm_input())
+    result, _ = client.call(_llm_input())
 
     assert seen["raw"] == '{"x": 1}'
     assert result == "parsed"
@@ -181,10 +181,9 @@ class _FakeOpenAIClientWithUsage:
 
 def test_real_llm_records_token_usage():
     client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientWithUsage())
-    client.call(_llm_input())
-    assert client.last_stats is not None
-    assert client.last_stats.prompt_tokens == 120
-    assert client.last_stats.completion_tokens == 30
+    _, stats = client.call(_llm_input())
+    assert stats.prompt_tokens == 120
+    assert stats.completion_tokens == 30
 
 
 class _CapturingCompletions:
@@ -223,12 +222,12 @@ def test_real_llm_omits_temperature_when_unset():
 
 def test_real_llm_records_latency():
     client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClientWithUsage())
-    client.call(_llm_input())
-    assert client.last_stats.latency_ms >= 0.0
+    _, stats = client.call(_llm_input())
+    assert stats.latency_ms >= 0.0
 
 
 def test_real_llm_stats_default_zero_without_usage():
     client = RealLLMClient(response_parser=_echo, api_key="", client=_FakeOpenAIClient(
         '{"action": "ask_user", "confidence": 0.6, "reasoning_summary": "x", "message": "hi"}'))
-    client.call(_llm_input())
-    assert client.last_stats.prompt_tokens == 0
+    _, stats = client.call(_llm_input())
+    assert stats.prompt_tokens == 0

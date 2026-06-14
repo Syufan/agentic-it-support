@@ -1,5 +1,5 @@
 from evaluation import evaluate
-from state.case_state import CaseState, Phase
+from agentic_it_support.state.case_state import CaseState, Phase
 
 
 def _closed_case(escalated: bool = False) -> CaseState:

@@ -1,7 +1,9 @@
-import tools.status_api as _status_mod
-from tools.status_api import StatusAPITool
+from pathlib import Path
 
-tool = StatusAPITool()
+from agentic_it_support.tools.status_api import StatusAPITool
+
+_STATUS_FILE = Path(__file__).resolve().parents[2] / "data" / "system_status" / "status.json"
+tool = StatusAPITool(_STATUS_FILE)
 
 VALID_STATUSES = {"operational", "degraded", "outage"}
 
@@ -46,17 +48,15 @@ def test_unknown_service_returns_error():
     assert result.error is not None
 
 
-def test_missing_status_file_returns_error_result(tmp_path, monkeypatch):
-    monkeypatch.setattr(_status_mod, "_STATUS_FILE", tmp_path / "nonexistent.json")
-    result = StatusAPITool().run({})
+def test_missing_status_file_returns_error_result(tmp_path):
+    result = StatusAPITool(tmp_path / "nonexistent.json").run({})
     assert result.success is False
     assert result.error is not None
 
 
-def test_malformed_status_file_returns_error_result(tmp_path, monkeypatch):
+def test_malformed_status_file_returns_error_result(tmp_path):
     bad = tmp_path / "status.json"
     bad.write_text("not valid json")
-    monkeypatch.setattr(_status_mod, "_STATUS_FILE", bad)
-    result = StatusAPITool().run({})
+    result = StatusAPITool(bad).run({})
     assert result.success is False
     assert result.error is not None

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
-from runtime.limits import MAX_TOOL_CALLS_PER_CASE
-from state.case_state import CaseState, Phase
+from agentic_it_support.config.settings import RuntimeLimits
+from agentic_it_support.state.case_state import CaseState, Phase
+
+_MAX_TOOL_CALLS_PER_CASE = RuntimeLimits().max_tool_calls_per_case
 
 
 @dataclass
@@ -18,7 +20,7 @@ class EvaluationResult:
 def evaluate(case: CaseState) -> EvaluationResult:
     escalated = bool(case.escalation_context)
     resolved = case.phase == Phase.CLOSED and not escalated
-    efficiency = max(0.0, 1.0 - case.tool_calls_total / MAX_TOOL_CALLS_PER_CASE)
+    efficiency = max(0.0, 1.0 - case.tool_calls_total / _MAX_TOOL_CALLS_PER_CASE)
 
     return EvaluationResult(
         resolved=resolved,

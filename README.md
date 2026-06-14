@@ -32,13 +32,13 @@ The system has five main layers:
    Tools provide grounded information from mock internal systems, including knowledge base articles, system status, policies, and resolution history.
 
 5. State and Observability
-   `CaseState` stores the current phase, conversation, facts, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
+   `CaseState` stores the current phase, conversation, tool traces, confidence, and escalation context. This makes the workflow inspectable and allows the system to hand off context to human IT.
 
 ## Design Decisions
 
 The main design decision is to keep the LLM and runtime separate. The LLM proposes what to do next, but the runtime controls whether that action is valid, safe, and allowed in the current workflow state.
 
-`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, known facts, tool results, confidence, failed resolutions, and escalation context.
+`CaseState` is the source of truth for the support process. Instead of relying on hidden model reasoning, the system records the current phase, conversation, tool results, confidence, failed resolutions, and escalation context.
 
 The runtime uses a ReAct-style loop, but tool execution is controlled by the system. The model can request a tool, but the runtime validates the request, checks limits and policy boundaries, executes the tool, and feeds the result back into the next step.
 
@@ -120,15 +120,18 @@ uv sync
 
 ### 3. Run the FastAPI server
 
+Activate the environment, then run the server as a module:
+
 ```bash
-uv run python main.py
+source .venv/bin/activate
+PYTHONPATH=src python -m agentic_it_support.main
 ```
 
-The server starts at:
+The server starts at `http://localhost:8000`. Stop it with `Ctrl+C`.
 
-```text
-http://localhost:8000
-```
+> `PYTHONPATH=src` runs the package straight from `src/` so it doesn't depend on
+> the editable install (the `agentic-it-api` console script needs that install,
+> which can be flaky on this layout). The same applies to the CLI and evaluator below.
 
 Check that it is alive:
 
@@ -154,16 +157,18 @@ curl -s -X POST http://localhost:8000/chat \
   -d '{"case_id": "<case_id>", "message": "Cisco AnyConnect on macOS, home WiFi, already restarted"}' | python3 -m json.tool
 ```
 
-Inspect the full case state:
+Inspect the recorded runtime trace for the case (events, tools, token usage):
 
 ```bash
-curl http://localhost:8000/case/<case_id> | python3 -m json.tool
+curl http://localhost:8000/case/<case_id>/trace | python3 -m json.tool
 ```
 
 ### 5. Run the local CLI
 
+With the environment activated (step 3):
+
 ```bash
-uv run python cli.py
+PYTHONPATH=src python -m agentic_it_support.cli.app
 ```
 
 Useful CLI commands:
@@ -177,16 +182,16 @@ Useful CLI commands:
 
 ### 6. Run tests and evaluation
 
-Run the test suite:
+Run the test suite (environment activated, step 3):
 
 ```bash
-uv run pytest
+pytest
 ```
 
 Run the scenario evaluator:
 
 ```bash
-uv run python -m evaluation.runner
+PYTHONPATH=src python -m evaluation.runner
 ```
 
 ## Evaluation
@@ -224,13 +229,17 @@ The current confidence score is a simple evidence-based heuristic from successfu
 
 ### 3. Planning and Structured Clarification
 
-For complex or ambiguous cases, I would add a planning mode before normal investigation begins. The agent would first produce a diagnostic plan with known facts, missing facts, affected system, risk level, tools to check, and escalation boundary.
+For complex or ambiguous cases, I would add a planning mode before normal investigation begins. The agent would first produce a diagnostic plan with missing context, affected system, risk level, tools to check, and escalation boundary.
 
 I would also replace free-form clarification with a structured clarification tool. Each question would be tied to a missing case field, so the runtime can tell whether the case is ready for investigation or still needs user input.
+
+I would also cross-check LLM-inferred resolution confirmations against the latest user message before updating case state.
 
 ### 4. Explicit Case Grounding
 
 I would make case grounding more explicit in state. A production version could track fields such as affected target, symptom, environment, start time, user goal, and whether each field is unknown, inferred, or confirmed.
+
+I would also replace the current keyword-based affected-target check with structured grounding or named-entity extraction.
 
 I did not implement the full grounding state in this prototype because it would require changes to the proposal schema, prompt format, state update logic, ambiguity handling, and tests. Instead, this version uses the existing CaseState, prompt guidance, and a minimum completeness gate before RESOLVE to prevent vague issues from becoming fake grounded answers.
 
@@ -238,12 +247,14 @@ I did not implement the full grounding state in this prototype because it would 
 
 The current policy layer uses a JSON-backed mock policy source. In production, I would replace this with a policy lookup tool or enterprise policy API that returns structured authorization facts for self-service, approval-routed, and human-only actions.
 
-I would also add memory filtering and context projection. The current system keeps the conversation in case state and sends a bounded case snapshot to the model. A production version should extract useful facts into structured state and send only the relevant context for the current step.
+I would also validate the policy data shape at load time. Today `_load_policy_rules` reads the JSON and indexes keys directly, so a malformed policy file fails late at runtime; I would parse it through a Pydantic model so a bad shape is rejected with a clear error when the rules are loaded.
+
+I would also improve context projection. The runtime keeps full case memory, but the model should receive only bounded, decision-relevant context such as phase, confidence, retry attempts, and recent tool evidence.
 
 
 ## Optional Design Note
 
-The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
+The system is currently exposed as a FastAPI service rather than a dedicated UI. This keeps the agent integration-ready: after more load testing and production hardening, the same `/chat` and `/case/{case_id}/trace` APIs could be connected to Slack, Microsoft Teams, or another internal support interface.
 
 ## Observability
 

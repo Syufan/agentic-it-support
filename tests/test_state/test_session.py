@@ -1,6 +1,6 @@
 import pytest
-from state.case_state import Phase
-from state.session import SessionStore
+from agentic_it_support.state.case_state import Phase
+from agentic_it_support.state.session import SessionStore
 
 
 @pytest.fixture
@@ -49,5 +49,5 @@ def test_active_count(store):
 def test_each_created_case_is_independent(store):
     case_a = store.create()
     case_b = store.create()
-    case_a.facts["key"] = "value"
-    assert case_b.facts == {}
+    case_a.conversation.append({"role": "user", "content": "hello"})
+    assert case_b.conversation == []

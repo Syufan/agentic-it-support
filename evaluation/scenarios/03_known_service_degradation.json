@@ -1,8 +1,9 @@
 {
   "name": "Known service degradation check",
-  "description": "Safe-guidance case. Employee reports Salesforce slowness. System status has an active Salesforce degradation, so the agent should check status and explain the known incident instead of pretending to fix it or escalating immediately.",
+  "description": "Safe-guidance case. Employee reports slow CRM behavior, then clarifies that Salesforce is affected across teammates. System status has an active Salesforce degradation, so the agent should check status and explain the known incident instead of pretending to fix it or escalating immediately.",
   "messages": [
-    "Salesforce has been extremely slow and laggy all morning. Is something wrong?"
+    "The CRM has been painfully slow all morning.",
+    "It's Salesforce, and a few teammates in the Chicago office are seeing the same lag."
   ],
   "expect": {
     "escalated": false,

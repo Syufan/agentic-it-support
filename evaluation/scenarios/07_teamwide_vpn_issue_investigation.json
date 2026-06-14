@@ -1,0 +1,12 @@
+{
+  "name": "Team-wide VPN issue investigation",
+  "description": "Conflicting-evidence case. The employee reports a team-wide VPN issue even though the status source may show VPN as operational. The agent should use tools and avoid declaring the problem solved from memory.",
+  "messages": [
+    "VPN is down for my whole team. Everyone remote is disconnected.",
+    "We are all seeing Cisco AnyConnect reconnect every few minutes."
+  ],
+  "expect": {
+    "escalated": false,
+    "min_tool_calls": 1
+  }
+}

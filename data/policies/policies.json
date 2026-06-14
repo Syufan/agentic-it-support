@@ -8,46 +8,109 @@
       "notes": "Agent may provide instructions but must never ask for or handle the actual password."
     },
     {
-      "action": "unlock_account",
-      "description": "Unlock a locked account before the automatic timeout",
-      "authorization": "human",
-      "notes": "Requires identity verification by an IT specialist."
-    },
-    {
-      "action": "reset_mfa_device",
-      "description": "Re-enroll or reset a multi-factor authentication device",
-      "authorization": "human",
-      "notes": "High-risk; always requires human approval and identity verification."
-    },
-    {
-      "action": "grant_software_access",
-      "description": "Grant access to a licensed software application",
-      "authorization": "approval",
-      "notes": "Agent submits the request; manager approval required for licensed/paid apps."
-    },
-    {
-      "action": "grant_data_access",
-      "description": "Grant access to production databases or dashboards (e.g. Snowflake, Grafana)",
-      "authorization": "approval",
-      "notes": "Requires data-owner approval; agent may not grant directly."
-    },
-    {
       "action": "provide_troubleshooting_guidance",
       "description": "Provide safe, low-risk troubleshooting steps from the knowledge base",
       "authorization": "agent",
       "notes": "Always permitted when grounded in a knowledge-base article."
     },
     {
+      "action": "grant_software_access",
+      "description": "Grant access to a licensed software application",
+      "authorization": "approval",
+      "notes": "Agent submits the request; manager approval required for licensed/paid apps.",
+      "match_patterns": [
+        ["grant", "access", "software"]
+      ]
+    },
+    {
+      "action": "grant_data_access",
+      "description": "Grant access to production databases or dashboards (e.g. Snowflake, Grafana)",
+      "authorization": "approval",
+      "notes": "Requires data-owner approval; agent may not grant directly.",
+      "match_patterns": [
+        ["grant", "access", "snowflake"],
+        ["grant", "access", "grafana"],
+        ["grant", "access", "database"],
+        ["grant", "access", "dashboard"]
+      ]
+    },
+    {
+      "action": "unlock_account",
+      "description": "Unlock a locked account before the automatic timeout",
+      "authorization": "human",
+      "notes": "Requires identity verification by an IT specialist. The agent may guide self-service unlock/reset, but must not claim to unlock the account itself.",
+      "match_patterns": [
+        ["i can unlock"],
+        ["i will unlock"],
+        ["i'll unlock"],
+        ["i unlocked"],
+        ["i have unlocked"],
+        ["i've unlocked"]
+      ]
+    },
+    {
+      "action": "reset_mfa_device",
+      "description": "Re-enroll or reset a multi-factor authentication device",
+      "authorization": "human",
+      "notes": "High-risk; always requires human approval and identity verification.",
+      "match_patterns": [
+        ["mfa", "reset"],
+        ["mfa", "re-enroll"],
+        ["mfa", "reenroll"],
+        ["mfa", "lost"],
+        ["mfa", "lose"],
+        ["mfa", "stolen"],
+        ["mfa", "new phone"],
+        ["mfa", "can't get past"],
+        ["mfa", "cannot get past"],
+        ["mfa", "no backup"],
+        ["authenticator", "reset"],
+        ["authenticator", "re-enroll"],
+        ["authenticator", "reenroll"],
+        ["authenticator", "lost"],
+        ["authenticator", "lose"],
+        ["authenticator", "stolen"],
+        ["authenticator", "new phone"],
+        ["authenticator", "can't get past"],
+        ["authenticator", "cannot get past"],
+        ["authenticator", "no backup"]
+      ]
+    },
+    {
       "action": "modify_network_hardware",
       "description": "Change VPN gateway or network hardware configuration",
       "authorization": "human",
-      "notes": "Out of scope for the agent; route to network engineering."
+      "notes": "Out of scope for the agent; route to network engineering.",
+      "match_patterns": [
+        ["vpn", "gateway", "reconfigure"],
+        ["vpn", "gateway", "change"],
+        ["network hardware", "upgrade"],
+        ["router", "configuration", "change"],
+        ["router", "config", "modify"],
+        ["gateway", "routing", "change"],
+        ["subnet", "routing", "modify"],
+        ["subnet", "reconfigure"]
+      ]
     },
     {
       "action": "handle_security_incident",
       "description": "Investigate or remediate a suspected security incident (malware, phishing, account compromise, lost or stolen device)",
       "authorization": "human",
-      "notes": "Security-sensitive; always requires human IT/security review. The agent must escalate and never attempt to self-resolve."
+      "notes": "Security-sensitive; always requires human IT/security review. The agent must escalate and never attempt to self-resolve.",
+      "match_patterns": [
+        ["malware"],
+        ["virus"],
+        ["ransomware"],
+        ["phishing"],
+        ["phishing email"],
+        ["suspicious link"],
+        ["weird emails"],
+        ["compromised"],
+        ["hacked"],
+        ["breach"],
+        ["stolen laptop"],
+        ["stolen device"]
+      ]
     }
   ]
 }

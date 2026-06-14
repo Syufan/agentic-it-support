@@ -1,6 +1,9 @@
-from tools.kb_search import KBSearchTool
+from pathlib import Path
 
-tool = KBSearchTool()
+from agentic_it_support.tools.kb_search import KBSearchTool
+
+_KB_DIR = Path(__file__).resolve().parents[2] / "data" / "knowledge_base"
+tool = KBSearchTool(_KB_DIR)
 
 
 def test_relevant_query_returns_results():
